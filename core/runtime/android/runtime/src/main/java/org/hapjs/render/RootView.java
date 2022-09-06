@@ -85,6 +85,7 @@ import org.hapjs.model.DisplayInfo;
 import org.hapjs.model.NetworkConfig;
 import org.hapjs.model.RoutableInfo;
 import org.hapjs.model.ScreenOrientation;
+import org.hapjs.model.videodata.VideoCacheManager;
 import org.hapjs.render.component.CallingComponent;
 import org.hapjs.render.jsruntime.JsBridge;
 import org.hapjs.render.jsruntime.JsThread;
@@ -322,12 +323,12 @@ public class RootView extends FrameLayout
                 }
 
                 @Override
-                public boolean shouldOverrideUrlLoading(String url, int pageId) {
+                public boolean shouldOverrideUrlLoading(String url, String sourceH5,int pageId) {
                     HybridRequest request =
                             new HybridRequest.Builder().uri(url).isDeepLink(true).pkg(mPackage)
                                     .build();
                     return RouterUtils.router(
-                            getContext(), mPageManager, pageId, request, VALUE_ROUTER_APP_FROM_WEB);
+                            getContext(), mPageManager, pageId, request, VALUE_ROUTER_APP_FROM_WEB, sourceH5);
                 }
 
                 @Override
@@ -673,7 +674,9 @@ public class RootView extends FrameLayout
         Context context = getContext();
         if (context instanceof Activity) {
             if (!((Activity) context).isDestroyed()) {
-                for (ActivityStateListener listener : mActivityStateListeners) {
+                Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+                for (; iterator.hasNext(); ) {
+                    ActivityStateListener listener = iterator.next();
                     listener.onActivityDestroy();
                 }
             }
@@ -822,6 +825,7 @@ public class RootView extends FrameLayout
                             protected LoadResult doInBackground() {
                                 RuntimeLogManager.getDefault()
                                         .logAsyncThreadTaskStart(mPackage, "loadAppInfo");
+                                Log.i(TAG, "loadAppInfo " + String.valueOf(request.getPackage()));
                                 ApplicationContext appContext =
                                         HapEngine.getInstance(request.getPackage())
                                                 .getApplicationContext();
@@ -1272,6 +1276,7 @@ public class RootView extends FrameLayout
         if (page != null && !page.shouldCache()) {
             onPageRemoved(page.pageId);
             page.clearCache();
+            VideoCacheManager.getInstance().clearVideoData(page.pageId);
             mJsThread.postDestroyPage(page);
         }
         InspectorManager.getInspector().onPageRemoved(index, page);
@@ -1430,7 +1435,9 @@ public class RootView extends FrameLayout
     }
 
     public void onActivityCreate() {
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityCreate();
         }
     }
@@ -1448,28 +1455,36 @@ public class RootView extends FrameLayout
     }
 
     public void onActivityStart() {
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityStart();
         }
         start();
     }
 
     public void onActivityResume() {
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityResume();
         }
         resume();
     }
 
     public void onActivityPause() {
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityPause();
         }
         pause();
     }
 
     public void onActivityStop() {
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityStop();
         }
         stop();
@@ -1480,7 +1495,9 @@ public class RootView extends FrameLayout
             getPageManager().clearCachePage();
         }
         dismissDialog();
-        for (ActivityStateListener listener : mActivityStateListeners) {
+        Iterator<ActivityStateListener> iterator = mActivityStateListeners.iterator();
+        for (; iterator.hasNext(); ) {
+            ActivityStateListener listener = iterator.next();
             listener.onActivityDestroy();
         }
         BrightnessUtils.unregisterAllObervers(getContext());
