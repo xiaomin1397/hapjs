@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -37,7 +37,7 @@ import org.hapjs.widgets.view.text.LineHeightSpan;
 import org.hapjs.widgets.view.text.TextDecoration;
 
 @WidgetAnnotation(name = Span.WIDGET_NAME)
-public class Span extends Container<View> implements InnerSpannable {
+public class Span extends Container<View> implements NestedInnerSpannable {
 
     protected static final String WIDGET_NAME = "span";
     // attribute
@@ -102,8 +102,13 @@ public class Span extends Container<View> implements InnerSpannable {
                 setFontSize(fontSizeStr);
                 return true;
             case Attributes.Style.LINE_HEIGHT:
-                int lineHeight = Attributes.getInt(mHapEngine, attribute, -1);
-                setLineHeight(lineHeight);
+                if (mAutoLineHeight) {
+                    int lineHeight = Attributes.getFontSize(mHapEngine, getPage(), attribute, -1, this);
+                    setLineHeight(lineHeight);
+                } else {
+                    int lineHeight = Attributes.getInt(mHapEngine, attribute, -1, this);
+                    setLineHeight(lineHeight);
+                }
                 return true;
             case Attributes.Style.FONT_STYLE:
                 String fontStyleStr = Attributes.getString(attribute);
@@ -173,7 +178,7 @@ public class Span extends Container<View> implements InnerSpannable {
     }
 
     public void setFontSize(String fontSizeStr) {
-        int fontSize = Attributes.getFontSize(mHapEngine, getPage(), fontSizeStr);
+        int fontSize = Attributes.getFontSize(mHapEngine, getPage(), fontSizeStr, this);
         if (mFontSize == fontSize) {
             return;
         }
@@ -414,7 +419,7 @@ public class Span extends Container<View> implements InnerSpannable {
             return;
         }
 
-        if (!(child instanceof Span)) {
+        if (!(child instanceof Span || child instanceof Image)) {
             Log.w(TAG, "text not support child:" + child.getClass().getSimpleName());
             return;
         }
@@ -433,12 +438,17 @@ public class Span extends Container<View> implements InnerSpannable {
         }
         List<Spannable> childrenSpannable = new ArrayList<>();
         for (Component comp : getChildren()) {
-            Span span = (Span) comp;
-            List<Spannable> childrenSpan = span.getChildrenSpannable();
-            if (childrenSpan != null) {
-                childrenSpannable.addAll(childrenSpan);
-            } else {
-                childrenSpannable.add(span.getSpannable());
+            if (comp instanceof Span) {
+                Span span = (Span) comp;
+                List<Spannable> childrenSpan = span.getChildrenSpannable();
+                if (childrenSpan != null) {
+                    childrenSpannable.addAll(childrenSpan);
+                } else {
+                    childrenSpannable.add(span.getSpannable());
+                }
+            } else if (comp instanceof Image) {
+                Image image = (Image) comp;
+                childrenSpannable.add(image.getSpannable());
             }
         }
         return childrenSpannable;

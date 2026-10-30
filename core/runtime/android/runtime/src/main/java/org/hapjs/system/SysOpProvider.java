@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@ package org.hapjs.system;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.view.View;
@@ -22,9 +23,11 @@ import org.hapjs.bridge.BaseJsSdkBridge;
 import org.hapjs.bridge.HybridManager;
 import org.hapjs.logging.Source;
 import org.hapjs.model.AppInfo;
+import org.hapjs.model.DisplayInfo;
 import org.hapjs.model.MenubarItemData;
 import org.hapjs.render.Page;
 import org.hapjs.render.RootView;
+import org.hapjs.runtime.HapEngine;
 
 public interface SysOpProvider {
     String NAME = "sysop";
@@ -35,6 +38,7 @@ public interface SysOpProvider {
     String PARAM_APPSIGN_KEY = "appSign";
     String PARAM_PACKAGE_KEY = "package";
     String PARAM_MENUBAR_KEY = "menubar";
+    String PARAM_SHAREBUTTON_KEY = "sharebutton";
     String PARAM_TITLEBAR_TITLE_KEY = "title_name";
     String PARAM_TITLEBAR_TITLE_COLOR_KEY = "title_color";
     String PARAM_TITLEBAR_HOME_KEY = "title_home";
@@ -44,8 +48,8 @@ public interface SysOpProvider {
 
     boolean hasShortcutInstalled(Context context, String pkg, String path);
 
-    boolean updateShortcut(
-            Context context, String pkg, String path, String params, String appName, Bitmap icon);
+    boolean updateShortcut(Context context, String pkg, String path, String params, String appName,
+                           Bitmap icon, boolean isOpIconUpdate);
 
     boolean uninstallShortcut(Context context, String pkg, String appName);
 
@@ -56,6 +60,8 @@ public interface SysOpProvider {
             String params,
             String appName,
             Uri iconUri,
+            String type,
+            String serverIconUrl,
             Source source,
             boolean isComplete);
 
@@ -64,6 +70,8 @@ public interface SysOpProvider {
     boolean isNotificationEnabled(Context context, String pkg);
 
     boolean isTextSizeAdjustAuto();
+
+    boolean isShowSizeAdjustAuto();
 
     void showSystemMenu(Context context, AppInfo appInfo);
 
@@ -123,6 +131,10 @@ public interface SysOpProvider {
 
     ComponentName get5gMgrComponent();
 
+    Intent getPermissionActivityIntent( String pkg);
+
+    int getDesignWidth(Context context, AppInfo appInfo);
+
     public BaseJsSdkBridge getJsBridge(HybridManager hybridManager);
 
     boolean isAllowMenubarMove(Context context, AppInfo appInfo, Map<String, Object> otherdatas);
@@ -153,8 +165,31 @@ public interface SysOpProvider {
         void isMenubarDataCollect(String packageName, boolean isCollected);
     }
 
-    int getScreenWidthPixels(Context context, int platformVersion);
+    int getScreenWidthPixels(Context context, int platformVersion,HashMap<String, Object> datas);
 
-    int getScreenHeightPixels(Context context, int platformVersion);
+    int getScreenHeightPixels(Context context, int platformVersion,HashMap<String, Object> datas);
 
+    int getScreenOrientation(Page page, AppInfo info);
+
+    boolean isFoldableDevice(Context context);
+
+    boolean isFoldStatusByDisplay(Context context);
+
+    int getFoldDisplayWidth(Context context);
+
+    int getSafeAreaWidth(Context context);
+
+    Map<String, Object> getSystemFontLevelData(Context context);
+
+    float getFontLevelAdjustSize(HapEngine hapEngine, Page page, float size, float minFontScale, float maxFontScale);
+
+    boolean isAdjustFontLevel(Context context);
+
+    boolean isSysShowLevelChange(Context context);
+
+    float getScaleShowLevel(Context context);
+
+    void updateConfiguration(Context context, Configuration configuration);
+
+    boolean isEnableTalkBack(Context context);
 }

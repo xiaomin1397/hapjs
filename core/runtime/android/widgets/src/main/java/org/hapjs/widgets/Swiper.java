@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,7 +45,9 @@ import org.hapjs.widgets.view.swiper.ViewPager;
                 Component.METHOD_ANIMATE,
                 Component.METHOD_GET_BOUNDING_CLIENT_RECT,
                 Component.METHOD_TO_TEMP_FILE_PATH,
-                Component.METHOD_FOCUS
+                Component.METHOD_FOCUS,
+                Component.METHOD_TALKBACK_FOCUS,
+                Component.METHOD_TALKBACK_ANNOUNCE
         })
 public class Swiper extends AbstractScrollable<SwiperView>
         implements Recycler, HScrollable, ViewTreeObserver.OnGlobalLayoutListener {
@@ -99,6 +101,7 @@ public class Swiper extends AbstractScrollable<SwiperView>
     private int mLastIndex = -1;
     private boolean mIndicatorEnabled = true;
     private boolean mSwiperAnimationChanged = false;
+    private boolean mHasSetImageBlur = false;
 
     private List<CachedComponent> mCachedComponentList = new ArrayList<>();
 
@@ -417,6 +420,15 @@ public class Swiper extends AbstractScrollable<SwiperView>
         setClipChildrenInternal(mViewPager, clipChildren);
     }
 
+    @Override
+    public void setBackgroundImage(String backgroundImage, boolean setBlur) {
+        if (isComponentAdaptiveEnable() && mHasSetImageBlur) {
+            return;
+        }
+        mHasSetImageBlur = true;
+        super.setBackgroundImage(backgroundImage, setBlur);
+    }
+
     private void setCurrentItem(int item) {
         if (mViewPager == null) {
             return;
@@ -432,7 +444,7 @@ public class Swiper extends AbstractScrollable<SwiperView>
     }
 
     public void setAutoScroll(String autoScrollStr) {
-        if (TextUtils.isEmpty(autoScrollStr) || mViewPager == null) {
+        if (TextUtils.isEmpty(autoScrollStr) || mViewPager == null || isEnableTalkBack()) {
             return;
         }
 

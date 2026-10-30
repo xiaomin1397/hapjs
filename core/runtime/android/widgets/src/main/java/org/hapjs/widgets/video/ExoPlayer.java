@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -40,6 +40,8 @@ import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.util.Util;
 import org.hapjs.component.constants.Attributes;
 
+import java.util.HashMap;
+
 public class ExoPlayer extends Player
         implements SimpleExoPlayer.VideoListener,
         com.google.android.exoplayer2.Player.EventListener {
@@ -56,14 +58,17 @@ public class ExoPlayer extends Player
     private boolean isBuffering;
     private SuspendLoadControl mSuspendLoadControl;
 
-    public ExoPlayer(@NonNull Context context) {
+    public ExoPlayer(@NonNull Context context, String mark) {
         super(context);
         mManifestDataSourceFactory =
-                new DefaultDataSourceFactory(context, Util.getUserAgent(context, "default"));
+                new DefaultDataSourceFactory(
+                        context, Util.getUserAgent(context, TextUtils.isEmpty(mark) ? "default" : mark));
         mMediaDataSourceFactory =
                 new DefaultDataSourceFactory(
-                        context, Util.getUserAgent(context, "default"),
+                        context,
+                        Util.getUserAgent(context, TextUtils.isEmpty(mark) ? "default" : mark),
                         new DefaultBandwidthMeter());
+        mMark = mark;
     }
 
     @Override
@@ -88,6 +93,7 @@ public class ExoPlayer extends Player
                 mPlayer.setVideoSurface(mSurface);
             }
             setMuted(isMuted());
+            setSpeed(mSpeed);
         }
         if (mPlayCount == 1) {
             mMediaSource = createMediaSource(mUri, null, null);
@@ -275,6 +281,26 @@ public class ExoPlayer extends Player
     }
 
     @Override
+    public void setSpeed(float speed) {
+        mSpeed = speed;
+        if (mPlayer == null) {
+            return;
+        }
+        PlaybackParameters origin = mPlayer.getPlaybackParameters();
+        if (origin.speed == mSpeed) {
+            Log.w(TAG, "the same speed,so  cancel setSpeed");
+            return;
+        }
+        PlaybackParameters parameters;
+        if (origin != null) {
+            parameters = new PlaybackParameters(speed, origin.pitch, origin.skipSilence);
+        } else {
+            parameters = new PlaybackParameters(speed);
+        }
+        mPlayer.setPlaybackParameters(parameters);
+    }
+
+    @Override
     protected void onAttachSurface(@Nullable Surface surface) {
         if (mPlayer != null) {
             mPlayer.setVideoSurface(surface);
@@ -385,7 +411,9 @@ public class ExoPlayer extends Player
         if (e != null) {
             what = e.type;
         }
-        notifyError(what, -1);
+        HashMap<String, Object> datas = new HashMap<>();
+        datas.put(Attributes.Style.MARK, !TextUtils.isEmpty(mMark) ? mMark : "");
+        notifyError(what, -1, datas);
     }
 
     @Override

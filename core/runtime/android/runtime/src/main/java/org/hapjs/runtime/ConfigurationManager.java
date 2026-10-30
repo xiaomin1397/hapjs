@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,10 +10,13 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Build;
+import android.util.Log;
+
 import androidx.appcompat.app.AppCompatDelegate;
 import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.hapjs.bridge.ApplicationContext;
+import org.hapjs.system.SysOpProvider;
 
 public class ConfigurationManager {
 
@@ -38,6 +41,7 @@ public class ConfigurationManager {
                 obtainLocale(applicationContext.getContext().getResources().getConfiguration()));
         updateThemeMode(applicationContext.getContext().getResources().getConfiguration());
         updateOrientation(applicationContext.getContext().getResources().getConfiguration());
+        updateScreenSize(applicationContext.getContext().getResources().getConfiguration());
     }
 
     public void addListener(ConfigurationListener listener) {
@@ -67,6 +71,7 @@ public class ConfigurationManager {
         updateLocale(obtainLocale(configuration));
         updateThemeMode(configuration);
         updateOrientation(configuration);
+        updateScreenSize(configuration);
 
         for (ConfigurationListener l : mConfigurationListener) {
             l.onConfigurationChanged(mCurrentConfiguration);
@@ -85,11 +90,21 @@ public class ConfigurationManager {
         mCurrentConfiguration.setOrientation(configuration.orientation);
     }
 
+    private void updateScreenSize(Configuration configuration) {
+        mCurrentConfiguration.setScreenSize(configuration.screenWidthDp);
+    }
+
     public void reset(Context context) {
         if (isConfigAllowed()) {
             return;
         }
         Configuration systemConfig = Resources.getSystem().getConfiguration();
+        SysOpProvider provider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+        if (null != provider) {
+            provider.updateConfiguration(context, systemConfig);
+        } else {
+            Log.w(TAG, "reset provider is null.");
+        }
         updateContextConfiguration(context, systemConfig);
         updateLocale(obtainLocale(systemConfig));
         mConfigurationListener.clear();

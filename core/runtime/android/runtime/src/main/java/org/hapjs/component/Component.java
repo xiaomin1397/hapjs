@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -19,6 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
 import android.util.ArrayMap;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.KeyEvent;
@@ -27,6 +28,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.ViewTreeObserver;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.RelativeLayout;
 import androidx.annotation.NonNull;
 import androidx.collection.ArraySet;
@@ -53,6 +55,7 @@ import org.hapjs.common.executors.Executors;
 import org.hapjs.common.utils.ColorUtil;
 import org.hapjs.common.utils.DisplayUtil;
 import org.hapjs.common.utils.FloatUtil;
+import org.hapjs.common.utils.FoldingUtils;
 import org.hapjs.common.utils.IntegerUtil;
 import org.hapjs.common.utils.SnapshotUtils;
 import org.hapjs.common.utils.UriUtils;
@@ -95,7 +98,10 @@ import org.hapjs.render.css.Node;
 import org.hapjs.render.css.value.CSSValues;
 import org.hapjs.render.vdom.DocComponent;
 import org.hapjs.runtime.HapEngine;
+import org.hapjs.runtime.ProviderManager;
 import org.hapjs.runtime.RuntimeActivity;
+import org.hapjs.system.SysOpProvider;
+import org.hapjs.system.utils.TalkBackUtils;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -104,6 +110,8 @@ public abstract class Component<T extends View>
 
     public static final int INVALID_PAGE_ID = -1;
     public static final String METHOD_FOCUS = "focus";
+    public static final String METHOD_TALKBACK_FOCUS = "requestTalkBackFocus";
+    public static final String METHOD_TALKBACK_ANNOUNCE = "announceForTalkBack";
     public static final String METHOD_ANIMATE = "animate";
     public static final String METHOD_REQUEST_FULLSCREEN = "requestFullscreen";
     public static final String METHOD_GET_BOUNDING_CLIENT_RECT = "getBoundingClientRect";
@@ -126,6 +134,7 @@ public abstract class Component<T extends View>
     private static final String CALLBACK_KEY_FAIL = "fail";
     private static final String CALLBACK_KEY_COMPLETE = "complete";
     private static final int MIN_DISPLAY_SHOW_PLATFORM_VERSION = 1080;
+    private static SysOpProvider sSysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
     protected Context mContext;
     protected Container mParent;
     protected int mRef;
@@ -146,6 +155,7 @@ public abstract class Component<T extends View>
     protected ComponentBackgroundComposer mBackgroundComposer;
     protected int mMinPlatformVersion;
     protected Canvas mSnapshotCanvas;
+    protected int mAdaptiveBeforeWidth;
     protected boolean mShow = true;
     protected boolean mShowAttrInitialized = false;
     private boolean mIsFixPositionDisabled = false;
@@ -161,6 +171,7 @@ public abstract class Component<T extends View>
     private AnimatorListenerBridge.AnimatorEventListener mAnimatorEventListener;
     private Map<String, String> mStylesApplyed;
     private Map<String, Object> mSavedState;
+    private List<String> mHookData;
     private Transform mTransform;
     private CSSAnimatorSet mAnimatorSet;
     private CSSTransitionSet mTransitionSet;
@@ -185,8 +196,18 @@ public abstract class Component<T extends View>
     private ComponentPreDrawListener mUnReadyPreDrawListener;
     private boolean mRegisterClickEvent;
 
+    protected boolean mIsAdMaterial = false;
+    protected boolean mIsUseInList = false;
 
     private View mFullScreenView;
+    protected float mMinFontLevel = -1;
+    protected float mMaxFontLevel = -1;
+    protected boolean mAutoLineHeight;
+    protected float mMinShowLevel = -1;
+    protected float mMaxShowLevel = -1;
+    protected boolean mIsAutoShowLevel;
+    protected boolean mIsSysShowLevelChange;
+    protected float mScaleShowLevel = 1.0f;
 
     public Component(HapEngine hapEngine, Context context, Container parent, int ref, RenderEventCallback callback,
                      Map<String, Object> savedState) {
@@ -207,6 +228,7 @@ public abstract class Component<T extends View>
         mDomTreeChangeListeners = new ArrayList<>();
 
         mAnimations = new HashMap<>();
+        mHookData = new ArrayList<>();
 
         if (parent != null) {
             mLazyCreate = parent.mLazyCreate;
@@ -217,6 +239,12 @@ public abstract class Component<T extends View>
             if (appInfo != null) {
                 mMinPlatformVersion = appInfo.getMinPlatformVersion();
             }
+        }
+        if (mParent != null && mParent.isAdMaterial()) {
+            mIsAdMaterial = true;
+        }
+        if (mParent != null && mParent.isUseInList()) {
+            mIsUseInList = true;
         }
     }
 
@@ -229,6 +257,7 @@ public abstract class Component<T extends View>
             onRestoreInstanceState(mSavedState);
 
             configBubbleEventAbove1040(false);
+            initShowLevel();
         }
         updateViewId();
 
@@ -537,7 +566,8 @@ public abstract class Component<T extends View>
 
         if (mTransform != null
                 && (!Float.isNaN(mTransform.getTranslationXPercent())
-                || !Float.isNaN(mTransform.getTranslationYPercent()))) {
+                || !Float.isNaN(mTransform.getTranslationYPercent())
+                || !Float.isNaN(mTransform.getTranslationZPercent()))) {
             addGlobalLayoutListener();
         } else if (mTransformLayoutListener != null) {
             removeGlobalLayoutListener();
@@ -763,7 +793,7 @@ public abstract class Component<T extends View>
         }
     }
 
-    private String getState(String key) {
+    public String getState(String key) {
         CSSValues attributeMap = mStyleDomData.get(key);
         String applyState = State.NORMAL;
         if (attributeMap != null) {
@@ -842,7 +872,7 @@ public abstract class Component<T extends View>
             case Attributes.Style.PADDING_TOP:
             case Attributes.Style.PADDING_RIGHT:
             case Attributes.Style.PADDING_BOTTOM:
-                float padding = Attributes.getFloat(mHapEngine, attribute, 0);
+                float padding = Attributes.getFloat(mHapEngine, attribute, 0,this);
                 setPadding(key, padding);
                 setPaddingExist(key, true);
                 return true;
@@ -964,10 +994,12 @@ public abstract class Component<T extends View>
                 setFocusable(focusable);
                 return true;
             case Attributes.Style.ARIA_LABEL:
+            case Attributes.Style.ARIA_LABEL_LOWER:
                 String ariaLabel = Attributes.getString(attribute);
                 setAriaLabel(ariaLabel);
                 return true;
             case Attributes.Style.ARIA_UNFOCUSABLE:
+            case Attributes.Style.ARIA_UNFOCUSABLE_LOWER:
                 boolean ariaUnfocusable = Attributes.getBoolean(attribute, true);
                 setAriaUnfocusable(ariaUnfocusable);
                 return true;
@@ -1491,6 +1523,17 @@ public abstract class Component<T extends View>
         return result;
     }
 
+    public void applyHook(List<String> hooks){
+        if (hooks == null || hooks.isEmpty()) {
+            return;
+        }
+        mHookData.addAll(hooks);
+    }
+
+    public List<String> getHook(){
+        return mHookData;
+    }
+
     private boolean isListenFullscreenChange() {
         return getDomEvents().contains(Attributes.Event.FULLSCREEN_CHANGE);
     }
@@ -1644,6 +1687,10 @@ public abstract class Component<T extends View>
             }
         }
         clearPreDrawListener();
+        if(mHookData != null){
+            mHookData.clear();
+        }
+
         if (mAnimatorEventListener != null) {
             mAnimatorEventListener.unregisterAllEvents();
             mAnimatorEventListener = null;
@@ -1687,6 +1734,14 @@ public abstract class Component<T extends View>
             mResizeListener.setLayout(layout);
         }
         savedState.clear();
+    }
+
+    public boolean isComponentAdaptiveEnable() {
+        if (mContext == null || sSysOpProvider == null) {
+            return false;
+        }
+        return sSysOpProvider.isFoldableDevice(mContext)
+                && !sSysOpProvider.isFoldStatusByDisplay(mContext) && FoldingUtils.isAdaptiveScreenMode();
     }
 
     public int getWidth() {
@@ -1738,14 +1793,32 @@ public abstract class Component<T extends View>
             }
         } else {
             mPercentWidth = -1;
-            int width =
-                    Attributes.getInt(mHapEngine, widthStr, ViewGroup.LayoutParams.WRAP_CONTENT);
+            int width = Attributes.getInt(mHapEngine, widthStr, ViewGroup.LayoutParams.WRAP_CONTENT, this);
+            if (isComponentAdaptiveEnable()) {
+                mAdaptiveBeforeWidth = width;
+                width = getAdapterWidth(width);
+            }
             lp.width = width;
             if (mNode != null) {
                 mNode.setWidth(width);
             }
         }
         mWidthDefined = true;
+    }
+
+    private int getAdapterWidth(int width) {
+        int foldWidth = sSysOpProvider.getFoldDisplayWidth(mContext.getApplicationContext());
+        DisplayMetrics displayMetrics = mContext.getResources().getDisplayMetrics();
+        if (width > (foldWidth / 2)) {
+            int adapterMargin = foldWidth - width;
+            boolean isLandscapeMode = DisplayUtil.isLandscapeMode(mContext);
+            if (isLandscapeMode) {
+                return displayMetrics.widthPixels + sSysOpProvider.getSafeAreaWidth(mContext) - adapterMargin;
+            } else {
+                return displayMetrics.widthPixels - adapterMargin;
+            }
+        }
+        return width;
     }
 
     public int getHeight() {
@@ -1795,8 +1868,7 @@ public abstract class Component<T extends View>
             }
         } else {
             mPercentHeight = -1;
-            int height =
-                    Attributes.getInt(mHapEngine, heightStr, ViewGroup.LayoutParams.WRAP_CONTENT);
+            int height = Attributes.getInt(mHapEngine, heightStr, ViewGroup.LayoutParams.WRAP_CONTENT, this);
             lp.height = height;
             if (mNode != null) {
                 mNode.setHeight(height);
@@ -1929,7 +2001,7 @@ public abstract class Component<T extends View>
         if (Attributes.Style.MARGIN_AUTO.equals(marginAttr) && isParentYogaLayout) {
             marginAuto = true;
         } else {
-            margin = Attributes.getInt(mHapEngine, marginAttr, 0);
+            margin = Attributes.getInt(mHapEngine, marginAttr, 0, this);
         }
 
         switch (position) {
@@ -2254,7 +2326,11 @@ public abstract class Component<T extends View>
     }
 
     public void setBackgroundImage(String backgroundImage) {
-        getOrCreateBackgroundComposer().setBackgroundImage(backgroundImage);
+        setBackgroundImage(backgroundImage, false);
+    }
+
+    public void setBackgroundImage(String backgroundImage, boolean setBlur) {
+        getOrCreateBackgroundComposer().setBackgroundImage(backgroundImage, setBlur);
     }
 
     public void setBackgroundSize(String backgroundSize) {
@@ -2829,7 +2905,7 @@ public abstract class Component<T extends View>
 
         Object attribute = dataMap.get(getState(key));
 
-        return Attributes.getInt(mHapEngine, attribute, defaultValue);
+        return Attributes.getInt(mHapEngine, attribute, defaultValue, this);
     }
 
     @Override
@@ -2863,6 +2939,14 @@ public abstract class Component<T extends View>
                 focus = Attributes.getBoolean(args.get("focus"), true);
             }
             focus(focus);
+        } else if (METHOD_TALKBACK_FOCUS.equals(methodName)) {
+            requestTalkBackFocus();
+        } else if (METHOD_TALKBACK_ANNOUNCE.equals(methodName)) {
+            String content = null;
+            if (args != null && args.get("content") != null) {
+                content = Attributes.getString(args.get("content"), "");
+            }
+            announceForTalkBack(content);
         } else if (METHOD_REQUEST_FULLSCREEN.equals(methodName)) {
             int screenOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
             if (args != null) {
@@ -2922,6 +3006,13 @@ public abstract class Component<T extends View>
 
     private void setRef(int ref) {
         mRef = ref;
+    }
+
+    /**
+     * list 中 绑定数据后，回调该方法
+     */
+    protected void afterApplyDataToComponent() {
+
     }
 
     public RenderEventCallback getCallback() {
@@ -3408,7 +3499,7 @@ public abstract class Component<T extends View>
         callback(args, CALLBACK_KEY_COMPLETE, null);
     }
 
-    public void callback(java.util.Map<String, Object> args, String key, Object object) {
+    public void callback(Map<String, Object> args, String key, Object object) {
         if (args != null && args.containsKey(key)) {
             String callbackId = (String) args.get(key);
             mCallback.onJsMethodCallback(getPageId(), callbackId, object);
@@ -3611,7 +3702,20 @@ public abstract class Component<T extends View>
                 component.mTransform.setTranslationY(translationY);
                 component.mHost.setTranslationY(translationY);
             }
+            if (!Float.isNaN(component.mTransform.getTranslationZPercent())) {
+                float translationZ = component.mTransform.getTranslationZPercent() * 2; // 2dp thickness
+                component.mTransform.setTranslationZ(translationZ);
+                component.mHost.setTranslationZ(translationZ);
+            }
         }
+    }
+
+    public boolean isAdMaterial() {
+        return mIsAdMaterial;
+    }
+
+    public boolean isUseInList() {
+        return mIsUseInList;
     }
 
     public static class RecyclerItem extends RecyclerDataItem {
@@ -3681,6 +3785,7 @@ public abstract class Component<T extends View>
             }
             recycle.performRestoreInstanceState(mInstanceState);
             mInstanceState.clear();
+            recycle.afterApplyDataToComponent();
         }
 
         public boolean isFixOrFloating() {
@@ -3781,7 +3886,7 @@ public abstract class Component<T extends View>
             if (Attributes.Style.MARGIN_AUTO.equals(marginAttr)) {
                 margin = 0.0f;
             } else {
-                margin = Attributes.getFloat(mHapEngine, marginAttr, 0.0f);
+                margin = Attributes.getFloat(mHapEngine, marginAttr, 0.0f,Component.this);
             }
             if (FloatUtil.isUndefined(margin)) {
                 margin = 0.0f;
@@ -4161,5 +4266,146 @@ public abstract class Component<T extends View>
 
     public void setFullScreenView(View view) {
         mFullScreenView = view;
+    }
+
+    public boolean preConsumeEvent(String eventName, Map<String, Object> data, boolean immediately) {
+        return false;
+    }
+
+    public float getMinFontLevel() {
+        return mMinFontLevel;
+    }
+
+    public float getMaxFontLevel() {
+        return mMaxFontLevel;
+    }
+
+    protected Page initFontLevel() {
+        Page page = getPage();
+        if (null == page || !page.isTextSizeAdjustAuto()) {
+            return page;
+        }
+        float minFontLevel = -1;
+        float maxFontLevel = -1;
+        if (null != mAttrsDomData &&
+                mAttrsDomData.containsKey(Attributes.Style.KEY_MIN_FONT_LEVEL)) {
+            minFontLevel = Attributes.getFloat(mHapEngine, mAttrsDomData.get(Attributes.Style.KEY_MIN_FONT_LEVEL), -1);
+            mMinFontLevel = minFontLevel;
+        }
+        if (null != mAttrsDomData &&
+                mAttrsDomData.containsKey(Attributes.Style.KEY_MAX_FONT_LEVEL)) {
+            maxFontLevel = Attributes.getFloat(mHapEngine, mAttrsDomData.get(Attributes.Style.KEY_MAX_FONT_LEVEL), -1);
+            mMaxFontLevel = maxFontLevel;
+        }
+        if (null != mAttrsDomData &&
+                mAttrsDomData.containsKey(Attributes.Style.AUTO_LINE_HEIGHT)) {
+            mAutoLineHeight = Attributes.getBoolean(mAttrsDomData.get(Attributes.Style.AUTO_LINE_HEIGHT), false);
+        }
+        return page;
+    }
+
+    protected void initShowLevel() {
+        boolean isDefaultSysShowSize = true;
+        SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+        if (null != sysOpProvider) {
+            isDefaultSysShowSize = !sysOpProvider.isSysShowLevelChange(mContext);
+            mIsSysShowLevelChange = !isDefaultSysShowSize;
+        }
+        if (isDefaultSysShowSize) {
+            return;
+        }
+        if (null != sysOpProvider) {
+            mScaleShowLevel = sysOpProvider.getScaleShowLevel(mContext);
+        }
+
+        Page page = getPage();
+        if (null == page || !page.isShowSizeAdjustAuto()) {
+            return;
+        }
+        mIsAutoShowLevel = true;
+        float minShowLevel = -1;
+        float maxShowLevel = -1;
+        if (null != mAttrsDomData &&
+                mAttrsDomData.containsKey(Attributes.Style.KEY_MIN_SHOW_LEVEL)) {
+            minShowLevel = Attributes.getFloat(mHapEngine, mAttrsDomData.get(Attributes.Style.KEY_MIN_SHOW_LEVEL), -1);
+            mMinShowLevel = minShowLevel;
+        }
+        if (null != mAttrsDomData &&
+                mAttrsDomData.containsKey(Attributes.Style.KEY_MAX_SHOW_LEVEL)) {
+            maxShowLevel = Attributes.getFloat(mHapEngine, mAttrsDomData.get(Attributes.Style.KEY_MAX_SHOW_LEVEL), -1);
+            mMaxShowLevel = maxShowLevel;
+        }
+    }
+
+    public boolean isAutoShowLevel() {
+        return mIsAutoShowLevel;
+    }
+
+    public boolean isSysShowLevelChange() {
+        return mIsSysShowLevelChange;
+    }
+
+    public float getScaleShowLevel() {
+        return mScaleShowLevel;
+    }
+
+    public float getMinShowLevel() {
+        return mMinShowLevel;
+    }
+
+    public float getMaxShowLevel() {
+        return mMaxShowLevel;
+    }
+
+    public void requestTalkBackFocus() {
+        if (isEnableTalkBack() && mHost != null) {
+            if (mHost.isAttachedToWindow()) {
+                mHost.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_HOVER_ENTER);
+            } else {
+                Log.w(TAG, "requestTalkBackFocus is not valid.");
+                mHost.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                    @Override
+                    public void onViewAttachedToWindow(View v) {
+                        mHost.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_HOVER_ENTER);
+                        mHost.removeOnAttachStateChangeListener(this);
+                    }
+
+                    @Override
+                    public void onViewDetachedFromWindow(View v) {
+
+                    }
+                });
+            }
+        }
+    }
+
+    public void announceForTalkBack(String content) {
+        if (isEnableTalkBack() && mHost != null && !TextUtils.isEmpty(content)) {
+            if (mHost.isAttachedToWindow()) {
+                mHost.announceForAccessibility(content);
+            } else {
+                Log.w(TAG, "announceForTalkBack is not valid.");
+                mHost.addOnAttachStateChangeListener(new View.OnAttachStateChangeListener() {
+                    @Override
+                    public void onViewAttachedToWindow(View v) {
+                        mHost.announceForAccessibility(content);
+                        mHost.removeOnAttachStateChangeListener(this);
+                    }
+
+                    @Override
+                    public void onViewDetachedFromWindow(View v) {
+
+                    }
+                });
+            }
+        }
+    }
+
+    public boolean isEnableTalkBack() {
+        return TalkBackUtils.isEnableTalkBack(mContext, false);
+    }
+
+    public void performComponentClick(MotionEvent event) {
+
     }
 }

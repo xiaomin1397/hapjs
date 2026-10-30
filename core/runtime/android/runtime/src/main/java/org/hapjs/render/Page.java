@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,8 +8,10 @@ package org.hapjs.render;
 import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -18,20 +20,25 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
 import org.hapjs.bridge.HybridRequest;
 import org.hapjs.common.compat.BuildPlatform;
 import org.hapjs.common.utils.ColorUtil;
 import org.hapjs.common.utils.ThreadUtils;
+import org.hapjs.component.constants.Attributes;
 import org.hapjs.component.view.MenubarView;
 import org.hapjs.model.AppInfo;
 import org.hapjs.model.DisplayInfo;
 import org.hapjs.model.RoutableInfo;
+import org.hapjs.render.vdom.DocAnimator;
 import org.hapjs.render.vdom.VDocument;
 import org.hapjs.runtime.BuildConfig;
 import org.hapjs.runtime.HapConfiguration;
 import org.hapjs.runtime.LocaleResourcesParser;
 import org.hapjs.runtime.ProviderManager;
 import org.hapjs.system.SysOpProvider;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class Page implements IPage {
     /**
@@ -81,6 +88,8 @@ public class Page implements IPage {
     private static final String PAGE_ORIENTATION = "orientation";
     private static final String MENU_BAR_DARK_STYLE = "dark";
     private static final String MENU_BAR_LIGHT_STYLE = "light";
+    private static final String TAG = "Page";
+
     public final Map<String, ?> intent;
     public final Map<String, ?> meta;
     public final int pageId;
@@ -99,6 +108,7 @@ public class Page implements IPage {
     private volatile int mLoadJsResult = JS_LOAD_RESULT_NONE;
     private int mInnerPageTag = PAGE_TAG_DEFAULT;
     private boolean mPageShowTitleBar = true;
+    private boolean mIsMultiWindowLeftPage = false;
 
     private String mExtraTitleBarBackgroundColor;
     private String mExtraTitleBarBackgroundOpacity;
@@ -113,6 +123,12 @@ public class Page implements IPage {
     private String mTargetPageUri;
     private long mPageLastUsedTime;
     private boolean mCleanCache = false;
+    private PageAnimationConfig mPageAnimationConfig;
+    private boolean mIsTabPage = false;
+    private static float sMinFontLevel = -2;
+    private static float sMaxFontLevel = -2;
+    private static float sMinShowLevel = -2;
+    private static float sMaxShowLevel = -2;
 
     public Page(
             AppInfo appInfo,
@@ -129,6 +145,7 @@ public class Page implements IPage {
         this.meta = makePageMetaInfo(routableInfo);
         this.launchFlags = launchFlags;
         mPageLastUsedTime = System.currentTimeMillis();
+        mPageAnimationConfig = parsePageAnimationConfig();
     }
 
     @Override
@@ -156,6 +173,14 @@ public class Page implements IPage {
         metaInfo.put(META_PATH, routableInfo.getPath());
         metaInfo.put(META_COMP, routableInfo.getComponent());
         return metaInfo;
+    }
+
+    public boolean isTabPage() {
+        return mIsTabPage;
+    }
+
+    public void setTabPage(boolean mIsTabPage) {
+        this.mIsTabPage = mIsTabPage;
     }
 
     public int getInnerPageTag() {
@@ -291,6 +316,14 @@ public class Page implements IPage {
         return mLoadJsResult;
     }
 
+    public void setIsMultiWindowLeftPage(boolean isMultiWindowLeftPage) {
+        mIsMultiWindowLeftPage = isMultiWindowLeftPage;
+    }
+
+    public boolean getIsMultiWindowLeftPage() {
+        return mIsMultiWindowLeftPage;
+    }
+
     public void setLoadJsResult(int loadJsResult) {
         mLoadJsResult = loadJsResult;
     }
@@ -403,6 +436,115 @@ public class Page implements IPage {
         return sysOpProvider.isTextSizeAdjustAuto();
     }
 
+    public float getMinFontLevel() {
+        if (sMinFontLevel != -2) {
+            return sMinFontLevel;
+        }
+        String parseValue = getDefaultStyle(DisplayInfo.Style.KEY_MIN_FONT_LEVEL,
+                null, null);
+        float minTextAdjustSize = -1;
+        if (!TextUtils.isEmpty(parseValue)) {
+            try {
+                minTextAdjustSize = Float.parseFloat(parseValue);
+            } catch (Exception e) {
+                Log.w(TAG, "getMinFontLevel parseValue error : " + e.getMessage());
+            }
+        } else {
+            Log.w(TAG, "getMinFontLevel parseValue empty use default.");
+        }
+        sMinFontLevel = minTextAdjustSize;
+        return sMinFontLevel;
+    }
+
+    public float getMaxFontLevel() {
+        if (sMaxFontLevel != -2) {
+            return sMaxFontLevel;
+        }
+        String parseValue = getDefaultStyle(DisplayInfo.Style.KEY_MAX_FONT_LEVEL,
+                null, null);
+        float maxTextAdjustSize = -1;
+        if (!TextUtils.isEmpty(parseValue)) {
+            try {
+                maxTextAdjustSize = Float.parseFloat(parseValue);
+            } catch (Exception e) {
+                Log.w(TAG, "getMaxTextAdjustSize parseValue error : " + e.getMessage());
+            }
+        } else {
+            Log.w(TAG, "getMaxFontLevel parseValue empty use default.");
+        }
+        sMaxFontLevel = maxTextAdjustSize;
+        return sMaxFontLevel;
+    }
+
+    public boolean isShowSizeAdjustAuto() {
+        String parseValue = getStyle(DisplayInfo.Style.KEY_SHOW_SIZE_ADJUST,
+                null, null);
+
+        if (TextUtils.equals("auto", parseValue)) {
+            return true;
+        } else if (TextUtils.equals("none", parseValue)) {
+            return false;
+        }
+
+        // default value
+        SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+        return sysOpProvider.isShowSizeAdjustAuto();
+    }
+
+    public boolean isDefaultShowSizeAdjustAuto() {
+        String parseValue = getDefaultStyle(DisplayInfo.Style.KEY_SHOW_SIZE_ADJUST,
+                null, null);
+
+        if (TextUtils.equals("auto", parseValue)) {
+            return true;
+        } else if (TextUtils.equals("none", parseValue)) {
+            return false;
+        }
+        // default value
+        SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+        return sysOpProvider.isShowSizeAdjustAuto();
+    }
+
+    public float getMinShowLevel() {
+        if (sMinShowLevel != -2) {
+            return sMinShowLevel;
+        }
+        String parseValue = getDefaultStyle(DisplayInfo.Style.KEY_MIN_SHOW_LEVEL,
+                null, null);
+        float minShowAdjustSize = -1;
+        if (!TextUtils.isEmpty(parseValue)) {
+            try {
+                minShowAdjustSize = Float.parseFloat(parseValue);
+            } catch (Exception e) {
+                Log.w(TAG, "getMinShowLevel parseValue error : " + e.getMessage());
+            }
+        } else {
+            Log.w(TAG, "getMinShowLevel parseValue empty use default.");
+        }
+        sMinShowLevel = minShowAdjustSize;
+        return sMinShowLevel;
+    }
+
+    public float getMaxShowLevel() {
+        if (sMaxShowLevel != -2) {
+            return sMaxShowLevel;
+        }
+        String parseValue = getDefaultStyle(DisplayInfo.Style.KEY_MAX_SHOW_LEVEL,
+                null, null);
+        float maxShowAdjustSize = -1;
+        if (!TextUtils.isEmpty(parseValue)) {
+            try {
+                maxShowAdjustSize = Float.parseFloat(parseValue);
+            } catch (Exception e) {
+                Log.w(TAG, "getMaxShowLevel parseValue error : " + e.getMessage());
+            }
+        } else {
+            Log.w(TAG, "getMaxShowLevel parseValue empty use default.");
+        }
+        sMaxShowLevel = maxShowAdjustSize;
+        return sMaxShowLevel;
+    }
+
     public boolean hasTitleBar() {
         String parseValue = getStyle(DisplayInfo.Style.KEY_TITLE_BAR, null, null);
 
@@ -451,7 +593,17 @@ public class Page implements IPage {
     }
 
     public String getMenuBarShareCurrentPage() {
-        String parseValue = getPageStyle(DisplayInfo.Style.PARAM_SHARE_CURRENT_PAGE, null, "");
+        String parseValue = getStyle(DisplayInfo.Style.PARAM_SHARE_CURRENT_PAGE,
+                null, "");
+        if (TextUtils.isEmpty(parseValue)) {
+            return "";
+        }
+        return parseValue;
+    }
+
+    public String getMenuBarUsePageParams() {
+        String parseValue = getPageStyle(DisplayInfo.Style.PARAM_SHARE_USE_PAGE_PARAMS,
+                null, "");
         if (TextUtils.isEmpty(parseValue)) {
             return "";
         }
@@ -671,6 +823,24 @@ public class Page implements IPage {
         return ColorUtil.getColor(parseValue, defaultValue);
     }
 
+    private String getDefaultStyle(String key, String extraValue, String defaultValue) {
+        DisplayInfo displayInfo = appInfo.getDisplayInfo();
+        if (displayInfo == null) {
+            return defaultValue;
+        }
+        String parseValue = extraValue;
+        if (TextUtils.isEmpty(parseValue)) {
+            DisplayInfo.Style defaultStyle = displayInfo.getDefaultStyle();
+            if (defaultStyle != null) {
+                parseValue = defaultStyle.get(key);
+            }
+        }
+        if (TextUtils.isEmpty(parseValue)) {
+            return defaultValue;
+        }
+        return parseValue;
+    }
+
     private String getStyle(String key, String extraValue, String defaultValue) {
         DisplayInfo displayInfo = appInfo.getDisplayInfo();
         if (displayInfo == null) {
@@ -717,6 +887,99 @@ public class Page implements IPage {
         return parseValue;
     }
 
+    private PageAnimationConfig parsePageAnimationConfig() {
+        PageAnimationConfig config = null;
+
+        // router.push()优先
+        JSONObject pageAnimateSettingObj = null;
+        if (params != null && params.size() > 0) {
+            Object obj = params.get(HybridRequest.PARAM_PAGE_ANIMATION);
+            if (obj instanceof String) {
+                String animationStr = obj.toString().trim();
+                try {
+                    pageAnimateSettingObj = new JSONObject(animationStr);
+                } catch (JSONException e) {
+                    Log.e(TAG, "parsePageAnimationConfig: ", e);
+                }
+
+            }
+        }
+        // manifest.json配置的单个页面其次
+        DisplayInfo displayInfo = appInfo.getDisplayInfo();
+        DisplayInfo.Style pageStyle = displayInfo != null ? displayInfo.getPageStyle(getName()) : null;
+        if (pageAnimateSettingObj == null && pageStyle != null) {
+            pageAnimateSettingObj = pageStyle.getPageAnimation();
+        }
+        // manifest.json配置的全局最后
+        if (pageAnimateSettingObj == null && displayInfo != null) {
+            pageAnimateSettingObj = displayInfo.getPageAnimation();
+        }
+
+        if (pageAnimateSettingObj != null) {
+            Object openEnterObj = pageAnimateSettingObj.opt(Attributes.PageAnimation.ACTION_OPEN_ENTER);
+            Object openExitObj = pageAnimateSettingObj.opt(Attributes.PageAnimation.ACTION_OPEN_EXIT);
+            Object closeEnterObj = pageAnimateSettingObj.opt(Attributes.PageAnimation.ACTION_CLOSE_ENTER);
+            Object closeExitObj = pageAnimateSettingObj.opt(Attributes.PageAnimation.ACTION_CLOSE_EXIT);
+            config = new PageAnimationConfig();
+            if (openEnterObj instanceof String) {
+                config.openEnter = openEnterObj.toString().trim();
+            }
+            if (openExitObj instanceof String) {
+                config.openExit = openExitObj.toString().trim();
+            }
+            if (closeEnterObj instanceof String) {
+                config.closeEnter = closeEnterObj.toString().trim();
+            }
+            if (closeExitObj instanceof String) {
+                config.closeExit = closeExitObj.toString().trim();
+            }
+        }
+        return config;
+    }
+
+
+    public int getPageAnimation(String animationType, int defValue) {
+        if (animationType == null || mPageAnimationConfig == null) {
+            return defValue;
+        }
+        String animation;
+        int animationId = defValue;
+        switch (animationType) {
+            case Attributes.PageAnimation.ACTION_OPEN_ENTER:
+                animation = mPageAnimationConfig.openEnter;
+                animationId = DocAnimator.TYPE_PAGE_OPEN_ENTER;
+                break;
+            case Attributes.PageAnimation.ACTION_OPEN_EXIT:
+                animation = mPageAnimationConfig.openExit;
+                animationId = DocAnimator.TYPE_PAGE_OPEN_EXIT;
+                break;
+            case Attributes.PageAnimation.ACTION_CLOSE_ENTER:
+                animation = mPageAnimationConfig.closeEnter;
+                animationId = DocAnimator.TYPE_PAGE_CLOSE_ENTER;
+                break;
+            case Attributes.PageAnimation.ACTION_CLOSE_EXIT:
+                animation = mPageAnimationConfig.closeExit;
+                animationId = DocAnimator.TYPE_PAGE_CLOSE_EXIT;
+                break;
+            default:
+                animation = Attributes.PageAnimation.NONE;
+        }
+
+        //default animation : slide
+        if (animation == null) {
+            animation = Attributes.PageAnimation.SLIDE;
+        }
+
+        if (Attributes.PageAnimation.SLIDE.equalsIgnoreCase(animation)) {
+            return animationId;
+        } else if (Attributes.PageAnimation.NONE.equalsIgnoreCase(animation)) {
+            //0表示无动画
+            return DocAnimator.TYPE_UNDEFINED;
+        }
+        return animationId;
+    }
+
+
     @Override
     public String toString() {
         return "app: "
@@ -733,5 +996,26 @@ public class Page implements IPage {
         void onLoadStart(Page page);
 
         void onLoadFinish(Page page);
+    }
+
+    private static class PageAnimationConfig {
+
+        private String openEnter;
+        private String closeEnter;
+        private String openExit;
+        private String closeExit;
+
+        private PageAnimationConfig() {
+        }
+
+        @Override
+        public String toString() {
+            return "PageAnimationConfig{" +
+                    "mOpenEnter='" + openEnter + '\'' +
+                    ", mCloseEnter='" + closeEnter + '\'' +
+                    ", mOpenExit='" + openExit + '\'' +
+                    ", mCloseExit='" + closeExit + '\'' +
+                    '}';
+        }
     }
 }

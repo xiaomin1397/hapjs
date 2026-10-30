@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,11 +10,17 @@ import { invokeScript } from 'src/shared/function'
 import ModuleHost from './module/index'
 import { registerModules, execInvokeCallback, requireModule } from './module/interface'
 import Session from './session'
-import { registerBundleChunks, requireBundleChunk } from './chunk'
+import {
+  registerBundleChunks,
+  requireBundleChunk,
+  registerComponentJson,
+  requireJson
+} from './chunk'
 
 import {
   registerManifest,
   isRpkMinPlatformVersionGEQ,
+  isRpkCardMinPlatformVersionGEQ,
   getManifestField,
   isRpkDebugMode
 } from './manifest'
@@ -50,7 +56,7 @@ function exposeToNative(methodNames) {
     global[methodName] = (...args) => {
       const ret = methodNames[methodName](...args)
       if (ret instanceof Error) {
-        console.error(ret.toString())
+        console.error(`### App Framework ### ${ret.toString()}`)
       }
       return ret
     }
@@ -109,7 +115,7 @@ function loadResource(uri) {
   // )
 
   if (!ret) {
-    console.warn(`文件不存在，请确认其路径：${uri}`)
+    console.warn(`### App Framework ### 文件不存在，请确认其路径：${uri}`)
   }
   return ret
 }
@@ -140,14 +146,17 @@ export default {
   ModuleHost,
   requireModule,
   requireScriptFile,
+  requireJson,
   initInterface,
   exposure: {
     registerModules,
     registerBundleChunks,
+    registerComponentJson,
     execInvokeCallback,
     registerManifest,
     getManifestField,
     isRpkMinPlatformVersionGEQ,
+    isRpkCardMinPlatformVersionGEQ,
     isRpkDebugMode
   }
 }

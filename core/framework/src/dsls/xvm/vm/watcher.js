@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +9,8 @@ import { $extend, isObject } from 'src/shared/util'
 import XLinker from './linker'
 
 import { $remove } from '../util'
+
+import { xHandleError, xInvokeWithErrorHandling } from 'src/shared/error'
 
 let _uid = 0
 
@@ -70,7 +72,9 @@ class XWatcher {
           } else if (typeof key !== 'symbol' && key[0] !== '_') {
             // 对象被Proxy代理后，原本访问[Symbol.toPrimitive]属性也会被劫持，即使该对象并未明确定义该属性
             // computed或者渲染watcher，则触发warn
-            console.warn(`请确认VM的data/public/protected/private中定义了属性：${key}`)
+            console.warn(
+              `### App Framework ### 请确认VM的data/public/protected/private中定义了属性：${key}`
+            )
           }
         }
         return target[key]
@@ -84,11 +88,20 @@ class XWatcher {
    */
   get() {
     XLinker.pushTarget(this)
+    let value
+    const vm = this.vm
     // console.trace(`### App Framework ### XLinker pushTarget ${this.id}`)
-    const value = this.getter.call(this.vmGetter, this.vm)
-    XLinker.popTarget()
-    // console.trace(`### App Framework ### XLinker popTarget ${this.id}`)
-    this.clearLink()
+    try {
+      value = this.active ? this.getter.call(this.vmGetter, vm) : undefined
+    } catch (e) {
+      // 防止存在错误的 computed属性 不断被重新计算，无限触发错误回调
+      this.dirty = false
+      xHandleError(e, vm, `getter for watcher "${this.expression}"`)
+    } finally {
+      XLinker.popTarget()
+      // console.trace(`### App Framework ### XLinker popTarget ${this.id}`)
+      this.clearLink()
+    }
     return value
   }
 
@@ -164,8 +177,10 @@ class XWatcher {
         // 设置新值
         const oldValue = this.value
         this.value = value
+        const expression = this.expression ? this.expression.originExp || this.expression : ''
+        const info = `callback for watcher "${expression}"`
         // 调用回调
-        this.cb.call(this.vm, value, oldValue)
+        xInvokeWithErrorHandling(this.cb, this.vm, [value, oldValue], this.vm, info)
       }
     }
   }

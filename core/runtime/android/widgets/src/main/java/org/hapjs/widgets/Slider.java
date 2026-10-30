@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,7 +27,9 @@ import org.hapjs.widgets.view.SliderView;
                 Component.METHOD_ANIMATE,
                 Component.METHOD_GET_BOUNDING_CLIENT_RECT,
                 Component.METHOD_TO_TEMP_FILE_PATH,
-                Component.METHOD_FOCUS
+                Component.METHOD_FOCUS,
+                Component.METHOD_TALKBACK_FOCUS,
+                Component.METHOD_TALKBACK_ANNOUNCE
         })
 public class Slider extends Component<SliderView> implements SwipeObserver {
 
@@ -59,7 +61,7 @@ public class Slider extends Component<SliderView> implements SwipeObserver {
         SliderView sliderView =
                 (SliderView) LayoutInflater.from(mContext).inflate(R.layout.slider, null);
         sliderView.setComponent(this);
-        int padding = Attributes.getInt(mHapEngine, DEFAULT_PADDING);
+        int padding = Attributes.getInt(mHapEngine, DEFAULT_PADDING, this);
         setPadding(Attributes.Style.PADDING_LEFT, padding);
         setPadding(Attributes.Style.PADDING_RIGHT, padding);
         sliderView.setPadding(padding, 0, padding, 0);

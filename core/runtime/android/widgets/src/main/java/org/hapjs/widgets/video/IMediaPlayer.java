@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@ import android.view.TextureView;
 import androidx.annotation.IntDef;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.HashMap;
 import java.util.Map;
 
 public interface IMediaPlayer {
@@ -62,6 +63,10 @@ public interface IMediaPlayer {
 
     void setMuted(boolean muted);
 
+    void setMark(String mark);
+
+    String getMark();
+
     long getCurrentPosition();
 
     long getDuration();
@@ -112,10 +117,16 @@ public interface IMediaPlayer {
     @interface MediaErrorType {
     }
 
+    /**
+     * 设置播放速度
+     * @param speed 倍速
+     */
+    void setSpeed(float speed);
+
     interface EventListener {
         void onLoadingChanged(IMediaPlayer player, boolean isLoading);
 
-        boolean onError(IMediaPlayer player, @MediaErrorType int what, int extra);
+        boolean onError(IMediaPlayer player, @MediaErrorType int what, int extra, HashMap<String, Object> datas);
 
         void onPlayerStateChanged(IMediaPlayer player, @PlayerState int playbackState);
 

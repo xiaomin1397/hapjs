@@ -1,30 +1,76 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
 package org.hapjs.model;
 
 import android.text.TextUtils;
+import android.util.Log;
+
+import java.util.ArrayList;
+
+import org.hapjs.component.constants.Attributes;
+import org.hapjs.render.MultiWindowManager;
+
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+
+import org.hapjs.runtime.ProviderManager;
+import org.hapjs.system.SysOpProvider;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class DisplayInfo {
 
+    private static final String TAG = "DisplayInfo";
     private static final String KEY_PAGES = "pages";
     private static final String KEY_THEME_MODE = "themeMode";
+    private static final String KEY_FIT_WIDE_SCREEN = "fitWideScreenMode";
+    public static final String MODE_ORIGINAL = "original";
+    public static final String MODE_FIT_SCREEN = "fitScreen";
+    public static final String MODE_FILL_SCREEN = "fillScreen";
+    public static final String MODE_MULTI_WINDOW = "multiWindow";
+    private static final String KEY_MULTI_WINDOW_MODE = "multiWindowMode";
+    private static final String KEY_MULTI_WINDOW_CONFIG = "multiWindowConfig";
+    private static final String KEY_MULTI_WINDOW_CONFIG_MODE = "mode";
+    public static final String MODE_SHOPPING = "shopping";
+    public static final String MODE_NAVIGATION = "navigation";
+    public static final String MODE_ADAPTIVE_SCREEN = "adaptiveScreen";
+
+    private static final String KEY_PAGE_ANIMATION = "pageAnimation";
 
     private Style mDefaultStyle;
     private Map<String, Style> mPagesStyle;
     private int mThemeMode; // dark-no--0,dark_yes--1,auto-- -1
+    private JSONObject mPageAnimation;
+    private String mFitMode;
+    public static final String KEY_NOT_VALID = "FALSE";
+    public static final String KEY_VALID = "TRUE";
 
     public static DisplayInfo parse(JSONObject jsonObject) {
         DisplayInfo displayInfo = new DisplayInfo();
         displayInfo.mDefaultStyle = Style.parse(jsonObject);
         displayInfo.mThemeMode = jsonObject.optInt(KEY_THEME_MODE, -1);
+        displayInfo.mPageAnimation = jsonObject.optJSONObject(KEY_PAGE_ANIMATION);
+
+        String fitMode = jsonObject.optString(KEY_FIT_WIDE_SCREEN);
+        if (!TextUtils.isEmpty(fitMode)) {
+            displayInfo.mFitMode = fitMode;
+            if (TextUtils.equals(fitMode, MODE_MULTI_WINDOW)) {
+                String multiWindowMode = jsonObject.optString(KEY_MULTI_WINDOW_MODE);
+                if (TextUtils.isEmpty(multiWindowMode)) {
+                    JSONObject multiWindowConfigJsonObject = jsonObject.optJSONObject(KEY_MULTI_WINDOW_CONFIG);
+                    if (multiWindowConfigJsonObject != null) {
+                        multiWindowMode = multiWindowConfigJsonObject.optString(KEY_MULTI_WINDOW_CONFIG_MODE);
+                    }
+                }
+                MultiWindowManager.setMultiWindowModeType(multiWindowMode);
+            }
+        }
 
         JSONObject pagesObject = jsonObject.optJSONObject(KEY_PAGES);
         if (pagesObject != null) {
@@ -45,6 +91,14 @@ public class DisplayInfo {
         return displayInfo;
     }
 
+    public String getFitMode() {
+        return mFitMode;
+    }
+
+    public void setFitMode(String fitMode) {
+        mFitMode = fitMode;
+    }
+
     public Style getDefaultStyle() {
         return mDefaultStyle;
     }
@@ -58,6 +112,17 @@ public class DisplayInfo {
             return null;
         }
         return mPagesStyle.get(pageName);
+    }
+
+    public JSONObject getPageAnimation() {
+        return mPageAnimation;
+    }
+
+    public List<TabBarInfo> getTabBarInfos() {
+        if (null == mDefaultStyle) {
+            return null;
+        }
+        return mDefaultStyle.mTabBarInfos;
     }
 
     public void setPageStyle(String pageName, Style pageStyle) {
@@ -98,6 +163,13 @@ public class DisplayInfo {
         public static final String PARAM_SHARE_CURRENT_PAGE = "shareCurrentPage";
         public static final String PARAM_SHARE_URL = "shareUrl";
         public static final String PARAM_SHARE_PARAMS = "shareParams";
+        public static final String PARAM_SHARE_USE_PAGE_PARAMS = "usePageParams";
+        public static final String KEY_TABBAR_DATA = "tabBar";
+        public static final String KEY_TABBAR_COLOR = "color";
+        public static final String KEY_TABBAR_SELECTEDCOLOR = "selectedColor";
+        public static final String KEY_TABBAR_BGCOLOR = "tabbarBackgroundColor";
+        public static final String KEY_TABBAR_LIST = "list";
+        public static final String KEY_MENUBAR_TIPS_CONTENT = "content";
 
         public static final String KEY_WINDOW_SOFT_INPUT_MODE = "windowSoftInputMode";
         public static final String KEY_ADJUST_PAN = "adjustPan";
@@ -114,8 +186,14 @@ public class DisplayInfo {
         public static final String KEY_FORCE_DARK = "forceDark";
 
         public static final String KEY_TEXT_SIZE_ADJUST = "textSizeAdjust";
+        public static final String KEY_SHOW_SIZE_ADJUST = "showSizeAdjust";
+        public static final String KEY_MIN_FONT_LEVEL = "minFontLevel";
+        public static final String KEY_MAX_FONT_LEVEL = "maxFontLevel";
+        public static final String KEY_MIN_SHOW_LEVEL = "minShowLevel";
+        public static final String KEY_MAX_SHOW_LEVEL = "maxShowLevel";
         public static final String MENU_BAR_DARK_STYLE = "dark";
         public static final String MENU_BAR_LIGHT_STYLE = "light";
+        public static final String KEY_PAGE_ANIMATION = "pageAnimation";
 
         private String mBackgroundColor;
         private String mTitleBarBgColor;
@@ -134,8 +212,15 @@ public class DisplayInfo {
         private String mMenuBarDescription;
         private String mMenuBarIcon;
         private boolean mMenuBarCurrenPage;
+        private boolean mConfigShareCurrentPage;
         private String mMenuBarShareUrl;
         private String mMenuBarShareParams;
+        private String mMenuBarUsePageParams;
+        private String mIsValidTabBar = KEY_NOT_VALID;
+        private String mTabBarColor;
+        private String mTabBarSelectedColor;
+        private String mTabBarBgColor;
+        private List<TabBarInfo> mTabBarInfos;
         private String mWindowSoftInputMode;
         private String mOrientation;
         private String mStatusBarImmersive;
@@ -143,8 +228,15 @@ public class DisplayInfo {
         private String mStatusBarBackgroundColor;
         private String mStatusBarBackgroundOpacity;
         private String mTextSizeAdjust;
+        private String mShowSizeAdjust;
+        private String mMinFontLevel;
+        private String mMaxFontLevel;
+        private String mMinShowLevel;
+        private String mMaxShowLevel;
         private String mFitCutout;
         private String mForceDark;
+
+        private JSONObject mPageAnimation;
 
         public static Style parse(JSONObject jsonObject) {
             Style style = new Style();
@@ -169,6 +261,26 @@ public class DisplayInfo {
             style.mStatusBarBackgroundOpacity =
                     jsonObject.optString(KEY_STATUS_BAR_BACKGROUND_OPACITY, null);
             style.mTextSizeAdjust = jsonObject.optString(KEY_TEXT_SIZE_ADJUST, null);
+            if (TextUtils.equals("auto", style.mTextSizeAdjust)
+                    || TextUtils.equals(Attributes.Style.AUTO_SIZE, style.mTextSizeAdjust)) {
+                SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+                if (null != sysOpProvider) {
+                    sysOpProvider.getSystemFontLevelData(null);
+                } else {
+                    Log.w(TAG, "parse sysOpProvider is null.");
+                }
+                double minFontLevel = jsonObject.optDouble(KEY_MIN_FONT_LEVEL, -1);
+                style.mMinFontLevel = (minFontLevel <= 0 ? "" : (minFontLevel + ""));
+                double maxFontLevel = jsonObject.optDouble(KEY_MAX_FONT_LEVEL, -1);
+                style.mMaxFontLevel = (maxFontLevel <= 0 ? "" : (maxFontLevel + ""));
+            }
+            style.mShowSizeAdjust = jsonObject.optString(KEY_SHOW_SIZE_ADJUST, null);
+            if (TextUtils.equals("auto", style.mShowSizeAdjust)) {
+                double minShowLevel = jsonObject.optDouble(KEY_MIN_SHOW_LEVEL, -1);
+                style.mMinShowLevel = (minShowLevel <= 0 ? "" : (minShowLevel + ""));
+                double maxShowLevel = jsonObject.optDouble(KEY_MAX_SHOW_LEVEL, -1);
+                style.mMaxShowLevel = (maxShowLevel <= 0 ? "" : (maxShowLevel + ""));
+            }
             style.mFitCutout = jsonObject.optString(KEY_FIT_CUTOUT, null);
             style.mForceDark = jsonObject.optString(KEY_FORCE_DARK, null);
 
@@ -180,11 +292,67 @@ public class DisplayInfo {
                 style.mMenuBarDescription =
                         menudatajson.optString(KEY_MENUBAR_SHARE_DESCRIPTION, null);
                 style.mMenuBarIcon = menudatajson.optString(KEY_MENUBAR_SHARE_ICON, null);
+                if (menudatajson.has(PARAM_SHARE_CURRENT_PAGE)) {
+                    style.mConfigShareCurrentPage = true;
+                }
                 style.mMenuBarCurrenPage = menudatajson.optBoolean(PARAM_SHARE_CURRENT_PAGE, false);
+                if (menudatajson.has(PARAM_SHARE_USE_PAGE_PARAMS)) {
+                    style.mMenuBarUsePageParams = menudatajson.optBoolean(PARAM_SHARE_USE_PAGE_PARAMS, false) ? "true" : "false";
+                } else {
+                    style.mMenuBarUsePageParams = "";
+                }
                 style.mMenuBarShareUrl = menudatajson.optString(PARAM_SHARE_URL, "");
                 style.mMenuBarShareParams = menudatajson.optString(PARAM_SHARE_PARAMS, "");
+            } else {
+                style.mMenuBarUsePageParams = "";
             }
 
+            style.mPageAnimation = jsonObject.optJSONObject(KEY_PAGE_ANIMATION);
+            JSONObject tabbarJson = jsonObject.optJSONObject(KEY_TABBAR_DATA);
+            if (null != tabbarJson) {
+                style.mIsValidTabBar = KEY_VALID;
+                style.mTabBarColor = tabbarJson.optString(KEY_TABBAR_COLOR, null);
+                style.mTabBarSelectedColor = tabbarJson.optString(KEY_TABBAR_SELECTEDCOLOR, null);
+                style.mTabBarBgColor = tabbarJson.optString(KEY_TABBAR_BGCOLOR, null);
+                JSONArray tabbarInfos = tabbarJson.optJSONArray(KEY_TABBAR_LIST);
+                if (null != tabbarInfos) {
+                    TabBarInfo tabBarInfo = null;
+                    JSONObject tabbarObj = null;
+                    style.mTabBarInfos = new ArrayList<>();
+                    String tabBarPagePath = "";
+                    String tabBarPageParams = "";
+                    String tabBarIconPath = "";
+                    String tabBarSelectedIconPath = "";
+                    String tabbarText = "";
+                    try {
+                        for (int i = 0; i < tabbarInfos.length(); i++) {
+                            tabbarObj = tabbarInfos.getJSONObject(i);
+                            tabBarInfo = new TabBarInfo();
+                            if (null != tabbarObj) {
+                                tabBarPagePath = tabbarObj.optString(TabBarInfo.KEY_TABBAR_PAGE_PATH, "");
+                                tabBarIconPath = tabbarObj.optString(TabBarInfo.KEY_TABBAR_ICONPATH, "");
+                                tabBarSelectedIconPath = tabbarObj.optString(TabBarInfo.KEY_TABBAR_SELECTEDICONPATH, "");
+                                tabbarText = tabbarObj.optString(TabBarInfo.KEY_TABBAR_TEXT, "");
+                                tabBarPageParams = tabbarObj.optString(TabBarInfo.KEY_TABBAR_PAGEPARAMS, "");
+                            } else {
+                                tabBarPagePath = "";
+                                tabBarIconPath = "";
+                                tabBarSelectedIconPath = "";
+                                tabbarText = "";
+                                tabBarPageParams = "";
+                            }
+                            tabBarInfo.mTabBarPagePath = tabBarPagePath;
+                            tabBarInfo.mTabBarIconPath = tabBarIconPath;
+                            tabBarInfo.mTabBarSelectedIconPath = tabBarSelectedIconPath;
+                            tabBarInfo.mTabBarText = tabbarText;
+                            tabBarInfo.mTabBarPageParams = tabBarPageParams;
+                            style.mTabBarInfos.add(tabBarInfo);
+                        }
+                    } catch (JSONException e) {
+                        Log.w(TAG, "parse tabbarInfos exception : " + e.getMessage());
+                    }
+                }
+            }
             return style;
         }
 
@@ -224,6 +392,16 @@ public class DisplayInfo {
                     return mStatusBarBackgroundOpacity;
                 case KEY_TEXT_SIZE_ADJUST:
                     return mTextSizeAdjust;
+                case KEY_SHOW_SIZE_ADJUST:
+                    return mShowSizeAdjust;
+                case KEY_MIN_FONT_LEVEL:
+                    return mMinFontLevel;
+                case KEY_MAX_FONT_LEVEL:
+                    return mMaxFontLevel;
+                case KEY_MIN_SHOW_LEVEL:
+                    return mMinShowLevel;
+                case KEY_MAX_SHOW_LEVEL:
+                    return mMaxShowLevel;
                 case KEY_FIT_CUTOUT:
                     return mFitCutout;
                 case KEY_MENUBAR:
@@ -237,18 +415,32 @@ public class DisplayInfo {
                 case KEY_MENUBAR_SHARE_ICON:
                     return mMenuBarIcon;
                 case PARAM_SHARE_CURRENT_PAGE:
-                    return mMenuBarCurrenPage ? "true" : "false";
+                    return mMenuBarCurrenPage ? "true" : (mConfigShareCurrentPage ? "false" : "");
+                case PARAM_SHARE_USE_PAGE_PARAMS:
+                    return mMenuBarUsePageParams;
                 case PARAM_SHARE_URL:
                     return mMenuBarShareUrl;
                 case PARAM_SHARE_PARAMS:
                     return mMenuBarShareParams;
                 case KEY_FORCE_DARK:
                     return mForceDark;
+                case KEY_TABBAR_COLOR:
+                    return mTabBarColor;
+                case KEY_TABBAR_SELECTEDCOLOR:
+                    return mTabBarSelectedColor;
+                case KEY_TABBAR_BGCOLOR:
+                    return mTabBarBgColor;
+                case KEY_TABBAR_DATA:
+                    return mIsValidTabBar;
                 default:
                     break;
             }
 
             return null;
+        }
+
+        public JSONObject getPageAnimation() {
+            return mPageAnimation;
         }
     }
 }

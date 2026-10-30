@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -20,8 +20,10 @@ public class PlayerProxy<P extends IMediaPlayer> implements IMediaPlayer {
     private boolean mMuted;
     private boolean mAutoPlay;
     private String mPlayCount = Attributes.PlayCount.ONCE;
+    private float mSpeed = 1.0f;
     public long mCachedPosition = -1;
     private boolean mSuspendBuffer = false;
+    private String mMark;
 
     @Override
     public void prepare() {
@@ -153,6 +155,14 @@ public class PlayerProxy<P extends IMediaPlayer> implements IMediaPlayer {
         }
     }
 
+    public String getMark() {
+        return mMark;
+    }
+
+    public void setMark(String mark) {
+        this.mMark = mark;
+    }
+
     @Override
     public long getCurrentPosition() {
         if (mPlayer != null) {
@@ -231,6 +241,14 @@ public class PlayerProxy<P extends IMediaPlayer> implements IMediaPlayer {
     }
 
     @Override
+    public void setSpeed(float speed) {
+        mSpeed = speed;
+        if (mPlayer != null) {
+            mPlayer.setSpeed(speed);
+        }
+    }
+
+    @Override
     public void setEventListener(EventListener listener) {
         mEventListener = listener;
         if (mPlayer != null) {
@@ -262,6 +280,7 @@ public class PlayerProxy<P extends IMediaPlayer> implements IMediaPlayer {
         mPlayer.setMuted(mMuted);
         mPlayer.autoPlay(mAutoPlay);
         mPlayer.setPlayCount(mPlayCount);
+        mPlayer.setSpeed(mSpeed);
         mPlayer.setSuspendBuffer(mSuspendBuffer);
     }
 

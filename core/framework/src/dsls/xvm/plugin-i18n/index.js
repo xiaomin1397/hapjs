@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,7 +49,7 @@ class PluginI18n {
   }
 
   _destroyVm() {
-    this._vm.$emit('xlc:onDestroy')
+    this._vm._emit('xlc:onDestroy')
   }
 
   get locale() {
@@ -81,7 +81,7 @@ class PluginI18n {
     if (!isNull(ret)) {
       return ret
     } else {
-      console.warn(`i18n：locale文件中没有找到对应的key：${key}`)
+      console.warn(`### App Framework ### i18n：locale文件中没有找到对应的key：${key}`)
       return key
     }
   }
@@ -106,12 +106,46 @@ class PluginI18n {
       return null
     }
     for (let i = 0, len = resources.length; i < len; i++) {
-      const ret = this._interpolate(locale, resources[i], key, host, interpolateMode, params, [key])
+      let ret
+      if (global.isRpkCardMinPlatformVersionGEQ(2000, host)) {
+        console.log(
+          `### App Framework ### i18n：读取卡片多语言资源，key: ${key}, locale: ${locale}, resources: ${JSON.stringify(
+            resources[i]
+          )}`
+        )
+        ret = this._interpolateFlatten(locale, resources[i], key, host, interpolateMode, params, [
+          key
+        ])
+      } else {
+        console.log(
+          `### App Framework ### i18n：读取多语言资源，key: ${key}, locale: ${locale}, resources: ${JSON.stringify(
+            resources[i]
+          )}`
+        )
+        ret = this._interpolate(locale, resources[i], key, host, interpolateMode, params, [key])
+      }
       if (!isNull(ret)) {
         return ret
       }
     }
     return null
+  }
+
+  _interpolateFlatten(locale, jsonObject, key, host, interpolateMode, params, visitedLinkStack) {
+    if (!jsonObject) {
+      return null
+    }
+
+    const keyRet = jsonObject[key]
+    return this._interpolateCore(
+      locale,
+      key,
+      host,
+      interpolateMode,
+      params,
+      visitedLinkStack,
+      keyRet
+    )
   }
 
   _interpolate(locale, jsonObject, key, host, interpolateMode, params, visitedLinkStack) {
@@ -120,6 +154,18 @@ class PluginI18n {
     }
 
     const keyRet = this._path.getPathValue(jsonObject, key)
+    return this._interpolateCore(
+      locale,
+      key,
+      host,
+      interpolateMode,
+      params,
+      visitedLinkStack,
+      keyRet
+    )
+  }
+
+  _interpolateCore(locale, key, host, interpolateMode, params, visitedLinkStack, keyRet) {
     if (isPlainObject(keyRet) || Array.isArray(keyRet)) {
       return keyRet
     }
@@ -161,7 +207,7 @@ class PluginI18n {
 
   _fetchChoice(optionLine, choice) {
     if (typeof optionLine !== 'string') {
-      console.warn(`i18n：处理复数的值定义应该为string类型：${optionLine}`)
+      console.warn(`### App Framework ### i18n：处理复数的值定义应该为string类型：${optionLine}`)
       return null
     }
 

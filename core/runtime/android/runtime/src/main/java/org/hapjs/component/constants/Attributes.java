@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,14 +9,13 @@ import android.content.res.Configuration;
 import android.text.TextUtils;
 import android.util.Log;
 import org.hapjs.card.sdk.utils.CardThemeUtils;
-import org.hapjs.common.json.JSONObject;
 import org.hapjs.common.utils.DisplayUtil;
 import org.hapjs.common.utils.FloatUtil;
+import org.hapjs.component.Component;
 import org.hapjs.render.Page;
-import org.hapjs.render.vdom.DocAnimator;
 import org.hapjs.runtime.HapEngine;
 import org.hapjs.runtime.ProviderManager;
-import org.json.JSONException;
+import org.hapjs.system.SysOpProvider;
 
 public class Attributes {
 
@@ -25,104 +24,91 @@ public class Attributes {
     private Attributes() {
     }
 
-    public static int getPageOpenEnterAnimation(JSONObject animationObj, int defValue) {
-        if (animationObj == null || !animationObj.has(PageAnimation.ACTION_OPEN_ENTER)) {
-            return defValue;
-        }
-        String temp = null;
-        try {
-            Object obj = animationObj.get(PageAnimation.ACTION_OPEN_ENTER);
-            if (obj instanceof String) {
-                temp = obj.toString().trim();
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "getPageOpenEnterAnimation: ", e);
-            return defValue;
-        }
-        if (PageAnimation.SLIDE.equalsIgnoreCase(temp)) {
-            return DocAnimator.TYPE_PAGE_OPEN_ENTER;
-        } else if (PageAnimation.NONE.equalsIgnoreCase(temp)) {
-            // 0表示无动画
-            return 0;
-        }
-        return defValue;
-    }
-
-    public static int getPageCloseEnterAnimation(JSONObject animationObj, int defValue) {
-        if (animationObj == null || !animationObj.has(PageAnimation.ACTION_CLOSE_ENTER)) {
-            return defValue;
-        }
-        String temp = null;
-        try {
-            Object obj = animationObj.get(PageAnimation.ACTION_CLOSE_ENTER);
-            if (obj instanceof String) {
-                temp = obj.toString().trim();
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "getPageCloseEnterAnimation: ", e);
-            return defValue;
-        }
-        if (PageAnimation.SLIDE.equalsIgnoreCase(temp)) {
-            return DocAnimator.TYPE_PAGE_CLOSE_ENTER;
-        } else if (PageAnimation.NONE.equalsIgnoreCase(temp)) {
-            // 0表示无动画
-            return 0;
-        }
-        return defValue;
-    }
-
-    public static int getPageCloseExitAnimation(JSONObject animationObj, int defValue) {
-        if (animationObj == null || !animationObj.has(PageAnimation.ACTION_CLOSE_EXIT)) {
-            return defValue;
-        }
-        String temp = null;
-        try {
-            Object obj = animationObj.get(PageAnimation.ACTION_CLOSE_EXIT);
-            if (obj instanceof String) {
-                temp = obj.toString().trim();
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "getPageCloseExitAnimation: ", e);
-            return defValue;
-        }
-        if (PageAnimation.SLIDE.equalsIgnoreCase(temp)) {
-            return DocAnimator.TYPE_PAGE_CLOSE_EXIT;
-        } else if (PageAnimation.NONE.equalsIgnoreCase(temp)) {
-            // 0表示无动画
-            return 0;
-        }
-        return defValue;
-    }
-
-    public static int getPageOpenExitAnimation(JSONObject animationObj, int defValue) {
-        if (animationObj == null || !animationObj.has(PageAnimation.ACTION_OPEN_EXIT)) {
-            return defValue;
-        }
-        String temp = null;
-        try {
-            Object obj = animationObj.get(PageAnimation.ACTION_OPEN_EXIT);
-            if (obj instanceof String) {
-                temp = obj.toString().trim();
-            }
-        } catch (JSONException e) {
-            Log.e(TAG, "getPageOpenExitAnimation: ", e);
-            return defValue;
-        }
-        if (PageAnimation.SLIDE.equalsIgnoreCase(temp)) {
-            return DocAnimator.TYPE_PAGE_OPEN_EXIT;
-        } else if (PageAnimation.NONE.equalsIgnoreCase(temp)) {
-            // 0表示无动画
-            return 0;
-        }
-        return defValue;
-    }
-
     public static int getInt(HapEngine hapEngine, Object value) {
         return getInt(hapEngine, value, 0);
     }
 
     public static int getInt(HapEngine hapEngine, Object value, int defValue) {
         return Math.round(getFloat(hapEngine, value, defValue));
+    }
+
+    public static int getInt(HapEngine hapEngine, Object value, Component component) {
+        return getInt(hapEngine, value, 0, component);
+    }
+
+    public static int getInt(HapEngine hapEngine, Object value, int defValue, Component component) {
+        return Math.round(getFloat(hapEngine, value, defValue, component));
+    }
+
+    public static int getFoldInt(HapEngine hapEngine, Object value, int defValue, boolean isUseFold) {
+        return Math.round(getFoldFloat(hapEngine, value, defValue, isUseFold));
+    }
+
+    public static float getFoldFloat(HapEngine hapEngine, Object value, float defValue, boolean isUseFold) {
+        if (value == null || "".equals(value)) {
+            return defValue;
+        }
+        String temp = value.toString().trim();
+        if (temp.startsWith(CardThemeUtils.KEY_THEME)) {
+            String themeValue = CardThemeUtils.getThemeValue(temp);
+            if (!TextUtils.isEmpty(themeValue)) {
+                temp = themeValue;
+            } else {
+                return defValue;
+            }
+        }
+        try {
+            //px
+            if (temp.endsWith(Unit.PX)) {
+                temp = temp.substring(0, temp.length() - Unit.PX.length());
+                float result = Float.parseFloat(temp);
+                if (hapEngine == null) {
+                    return defValue;
+                }
+                return DisplayUtil.getFoldRealPxByWidth(result, hapEngine.getDesignWidth(), isUseFold);
+            }
+
+            //dp
+            if (temp.endsWith(Unit.DP)) {
+                temp = temp.substring(0, temp.length() - Unit.DP.length());
+                float result = Float.parseFloat(temp);
+                if (hapEngine == null) {
+                    return defValue;
+                }
+                return DisplayUtil.dip2Pixel(hapEngine.getContext(), (int) result);
+            }
+
+            //default
+            return Float.parseFloat(temp);
+        } catch (Exception e) {
+            Log.e(TAG, "Attribute get float error: " + temp, e);
+        }
+        return defValue;
+    }
+
+    public static int getFoldFontSize(HapEngine hapEngine, Page page, Object value, boolean isUseFold) {
+        return getFoldFontSize(hapEngine, page, value, 0, isUseFold);
+    }
+
+    /**
+     * @param hapEngine
+     * @param page
+     * @param value
+     * @param defValue
+     * @return
+     */
+    public static int getFoldFontSize(HapEngine hapEngine, Page page, Object value, int defValue, boolean isUseFold) {
+        if (hapEngine == null || page == null) {
+            return defValue;
+        }
+        FontSizeProvider provider = ProviderManager.getDefault().getProvider(FontSizeProvider.NAME);
+        float size = provider.getBestFontSize(hapEngine.getContext(), getFoldFloat(hapEngine, value, defValue, isUseFold));
+        if (page.isTextSizeAdjustAuto()) {
+            Configuration configuration = hapEngine.getContext().getResources().getConfiguration();
+            size *= configuration.fontScale;
+        }
+
+        return Math.round(size);
     }
 
     public static float getFloat(HapEngine hapEngine, Object value) {
@@ -164,6 +150,90 @@ public class Attributes {
             }
 
             // default
+            return Float.parseFloat(temp);
+        } catch (Exception e) {
+            Log.e(TAG, "Attribute get float error: " + temp, e);
+        }
+        return defValue;
+    }
+
+    public static float getFloat(HapEngine hapEngine, Object value, Component component) {
+        if (null == component || (null != component
+                && !component.isSysShowLevelChange())) {
+            return getFloat(hapEngine, value);
+        } else {
+            return getFloatByComponent(hapEngine, value, FloatUtil.UNDEFINED, component);
+        }
+    }
+
+    public static float getFloat(HapEngine hapEngine, Object value, float defValue, Component component) {
+        if (null == component || (null != component
+                && !component.isSysShowLevelChange())) {
+            return getFloat(hapEngine, value, defValue);
+        } else {
+            return getFloatByComponent(hapEngine, value, defValue, component);
+        }
+    }
+
+    public static float getFloatByComponent(HapEngine hapEngine, Object value, float defValue, Component component) {
+        if (value == null || "".equals(value)) {
+            return defValue;
+        }
+        String temp = value.toString().trim();
+        if (temp.startsWith(CardThemeUtils.KEY_THEME)) {
+            String themeValue = CardThemeUtils.getThemeValue(temp);
+            if (!TextUtils.isEmpty(themeValue)) {
+                temp = themeValue;
+            } else {
+                return defValue;
+            }
+        }
+        try {
+            //px
+            if (temp.endsWith(Unit.PX)) {
+                temp = temp.substring(0, temp.length() - Unit.PX.length());
+                float result = Float.parseFloat(temp);
+                if (null != component && component.isSysShowLevelChange()
+                        && component.isAutoShowLevel()) {
+                    float minShowLevel = component.getMinShowLevel();
+                    float maxShowLevel = component.getMaxShowLevel();
+                    float sysShowLevel = component.getScaleShowLevel();
+                    float realShowLevel = sysShowLevel;
+                    if (minShowLevel > 0 && maxShowLevel > 0 && minShowLevel <= maxShowLevel) {
+                        if (sysShowLevel >= maxShowLevel) {
+                            realShowLevel = maxShowLevel;
+                        } else if (sysShowLevel <= minShowLevel) {
+                            realShowLevel = minShowLevel;
+                        }
+                    }
+                    result = result * realShowLevel;
+                }
+                if (hapEngine == null) {
+                    return defValue;
+                }
+                return DisplayUtil.getRealPxByWidth(result, hapEngine.getDesignWidth());
+            }
+
+            //dp
+            if (temp.endsWith(Unit.DP)) {
+                temp = temp.substring(0, temp.length() - Unit.DP.length());
+                float result = Float.parseFloat(temp);
+                if (null != component && component.isSysShowLevelChange()) {
+                    float sysShowLevel = 1.0f;
+                    if (!component.isAutoShowLevel()) {
+                        sysShowLevel = component.getScaleShowLevel();
+                    }
+                    if (sysShowLevel > 0) {
+                        result = result / sysShowLevel;
+                    }
+                }
+                if (hapEngine == null) {
+                    return defValue;
+                }
+                return DisplayUtil.dip2PixelFloat(hapEngine.getContext(), result);
+            }
+
+            //default
             return Float.parseFloat(temp);
         } catch (Exception e) {
             Log.e(TAG, "Attribute get float error: " + temp, e);
@@ -328,6 +398,23 @@ public class Attributes {
         return Math.round(size);
     }
 
+    public static int getFontSizeByComponent(HapEngine hapEngine, Page page, Object value, Component component) {
+        return getFontSize(hapEngine, page, value, 0, component);
+    }
+
+    public static int getFontSizeByComponent(HapEngine hapEngine, Page page, Object value, int defValue, Component component) {
+        if (hapEngine == null || page == null) {
+            return defValue;
+        }
+        FontSizeProvider provider = ProviderManager.getDefault().getProvider(FontSizeProvider.NAME);
+        float size = provider.getBestFontSize(hapEngine.getContext(), getFloat(hapEngine, value, defValue, component));
+        if (page.isTextSizeAdjustAuto()) {
+            Configuration configuration = hapEngine.getContext().getResources().getConfiguration();
+            size *= configuration.fontScale;
+        }
+        return Math.round(size);
+    }
+
     public interface Style {
         String ID = "id";
         String TARGET = "target";
@@ -339,6 +426,7 @@ public class Attributes {
         String MAX_WIDTH = "maxWidth";
         String MAX_HEIGHT = "maxHeight";
         String AUTO = "auto";
+        String AUTO_SIZE = "autosize";
         String NONE = "none";
         String MIN_CONTENT = "minContent";
         String MAX_CONTENT = "maxContent";
@@ -412,8 +500,13 @@ public class Attributes {
 
         String LINES = "lines";
         String LINE_HEIGHT = "lineHeight";
+        String AUTO_LINE_HEIGHT = "autolineheight";
         String COLOR = "color";
         String FONT_SIZE = "fontSize";
+        String KEY_MIN_FONT_LEVEL = "minfontlevel";
+        String KEY_MAX_FONT_LEVEL = "maxfontlevel";
+        String KEY_MIN_SHOW_LEVEL = "minshowlevel";
+        String KEY_MAX_SHOW_LEVEL = "maxshowlevel";
         String FONT_STYLE = "fontStyle";
         String FONT_WEIGHT = "fontWeight";
         String TEXT_DECORATION = "textDecoration";
@@ -423,6 +516,7 @@ public class Attributes {
         String TYPE = "type";
         String TEXT_OVERFLOW = "textOverflow";
         String TEXT_INDENT = "textIndent";
+        String LETTER_SPACING = "letterSpacing";
 
         String NAME = "name";
         String VALUE = "value";
@@ -432,7 +526,10 @@ public class Attributes {
         String OBJECT_FIT = "objectFit";
         String ALT_OBJECT_FIT = "altObjectFit";
         String SRC = "src";
+        String MARK = "mark";
+        String SOURCE = "source";
         String ALT = "alt";
+        String QUALITY = "quality";
 
         String INDEX = "index";
         String AUTO_PLAY = "autoplay";
@@ -478,6 +575,7 @@ public class Attributes {
 
         String SCROLL_PAGE = "scrollpage";
         String COLUMNS = "columns";
+        String FOCUS_BEHAVIOR = "focusbehavior";
 
         String COLUMN_SPAN = "columnSpan";
 
@@ -494,7 +592,9 @@ public class Attributes {
         String MODE = "mode";
 
         String ARIA_LABEL = "ariaLabel";
+        String ARIA_LABEL_LOWER = "arialabel";
         String ARIA_UNFOCUSABLE = "ariaUnfocusable";
+        String ARIA_UNFOCUSABLE_LOWER = "ariaunfocusable";
 
         String FORCE_DARK = "forcedark";
 
@@ -525,6 +625,10 @@ public class Attributes {
         String NUMBER = "number";
         String PASSWORD = "password";
         String TELEPHONE = "tel";
+    }
+
+    public interface EventType {
+        String SHORTCUT = "shortcut";
     }
 
     public interface AutoComplete {
@@ -564,12 +668,16 @@ public class Attributes {
         String CHANGE = "change";
         String RESIZE = "resize";
 
+        String PAGE_SPLIT = "splitpage";
+        String PAGE_CHANGED = "pagechanged";
+
         // list
         String SCROLL = "scroll";
         String SCROLL_BOTTOM = "scrollbottom";
         String SCROLL_TOP = "scrolltop";
         String SCROLL_END = "scrollend";
         String SCROLL_TOUCH_UP = "scrolltouchup";
+        String SELECTED = "selected";
 
         // refresh
         String REFRESH = "refresh";
@@ -690,5 +798,47 @@ public class Attributes {
     public interface OverflowType {
         String VISIBLE = "visible";
         String HIDDEN = "hidden";
+    }
+
+    public interface FocusBehavior {
+        String ALIGNED = "aligned";
+        String EDGED = "edged";
+    }
+    /**
+     * fontScale adapter
+     */
+    public static int getFontSize(HapEngine hapEngine, Page page, Object value, Component component) {
+        return getFontSize(hapEngine, page, value, 0, component);
+    }
+
+    public static int getFontSize(HapEngine hapEngine, Page page, Object value, int defValue, Component component) {
+        if (hapEngine == null || page == null) {
+            return defValue;
+        }
+        if (!page.isTextSizeAdjustAuto()) {
+            return getFontSizeByComponent(hapEngine, page, value, defValue, component);
+        } else {
+            FontSizeProvider provider = ProviderManager.getDefault().getProvider(FontSizeProvider.NAME);
+            float size = provider.getBestFontSize(hapEngine.getContext(), getFloat(hapEngine, value, defValue, component));
+            SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+            if (null != sysOpProvider) {
+                boolean isAdjustFontLevel = sysOpProvider.isAdjustFontLevel(hapEngine.getContext());
+                if (!isAdjustFontLevel) {
+                    Configuration configuration = hapEngine.getContext().getResources().getConfiguration();
+                    size *= configuration.fontScale;
+                } else {
+                    float adjustSize = sysOpProvider.getFontLevelAdjustSize(hapEngine, page, size, (null != component ? component.getMinFontLevel() : -1),
+                            (null != component ? component.getMaxFontLevel() : -1));
+                    if (adjustSize > 0) {
+                        size = adjustSize;
+                    } else {
+                        Log.w(TAG, "getFontSize adjustSize is not valid.");
+                    }
+                }
+            } else {
+                Log.w(TAG, "getFontSize sysOpProvider is null.");
+            }
+            return Math.round(size);
+        }
     }
 }

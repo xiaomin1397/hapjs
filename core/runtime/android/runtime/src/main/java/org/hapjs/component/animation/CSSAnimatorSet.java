@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,7 @@ import static org.hapjs.component.animation.AnimationParser.PROPERTY_SCALE_X;
 import static org.hapjs.component.animation.AnimationParser.PROPERTY_SCALE_Y;
 import static org.hapjs.component.animation.AnimationParser.PROPERTY_TRANSLATION_X;
 import static org.hapjs.component.animation.AnimationParser.PROPERTY_TRANSLATION_Y;
+import static org.hapjs.component.animation.AnimationParser.PROPERTY_TRANSLATION_Z;
 import static org.hapjs.component.animation.AnimationParser.PROPERTY_WIDTH;
 
 import android.animation.Animator;
@@ -26,19 +27,27 @@ import android.animation.TimeInterpolator;
 import android.animation.ValueAnimator;
 import android.graphics.Color;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 import android.view.animation.Interpolator;
 import android.view.animation.LinearInterpolator;
+
 import java.lang.ref.WeakReference;
 import java.util.Collection;
 import java.util.Objects;
+
+import org.hapjs.bridge.HybridManager;
+import org.hapjs.bridge.HybridView;
 import org.hapjs.common.utils.ColorUtil;
 import org.hapjs.component.Component;
+import org.hapjs.component.bridge.ActivityStateListener;
+import org.hapjs.component.bridge.SimpleActivityStateListener;
 import org.hapjs.component.constants.Attributes;
 import org.hapjs.runtime.HapEngine;
 
 public class CSSAnimatorSet {
 
+    private final String TAG = "CSSAnimatorSet";
     private Component mComponent;
     private Transform mTransform;
     private AnimatorSet mWrapped;
@@ -57,6 +66,8 @@ public class CSSAnimatorSet {
     private boolean mIsPercent = false;
     private boolean mIsCanceled = false;
     private boolean mIsFinished = false;
+    private boolean mActivityListenerInstalled = false;
+    private boolean mForceActivityListenerInstalled = false;
 
     private long mStartTime = 0;
     private long mDelay = 0;
@@ -113,6 +124,27 @@ public class CSSAnimatorSet {
                     }
                 }
             };
+
+    private final SimpleActivityStateListener mActivityStateListener = new SimpleActivityStateListener() {
+        private boolean mSuspended;
+
+        @Override
+        public void onActivityResume() {
+            if (mSuspended) {
+                mWrapped.resume();
+                mSuspended = false;
+            }
+        }
+
+        @Override
+        public void onActivityPause() {
+            boolean previouslyStarted = mWrapped.isStarted() && (mWrapped.isRunning() || !mWrapped.isPaused());
+            if (previouslyStarted && !mSuspended) {
+                mWrapped.pause();
+                mSuspended = mWrapped.isPaused();
+            }
+        }
+    };
 
     public CSSAnimatorSet(HapEngine hapEngine, Component component) {
         mHapEngine = hapEngine;
@@ -204,6 +236,10 @@ public class CSSAnimatorSet {
         }
     }
 
+    public int getRepeatCount() {
+        return mRepeatCount;
+    }
+
     public void start() {
         if (mComponent == null) {
             return;
@@ -227,6 +263,9 @@ public class CSSAnimatorSet {
 
         // 百分比参数动画在自身尺寸发生变化时，需要进行自适应
         installLayoutChangeListener(animatedView);
+
+        // 根据activity可见性暂停或重启动画
+        installActivityListener(mComponent);
     }
 
     public void finish() {
@@ -235,6 +274,10 @@ public class CSSAnimatorSet {
 
     public void pause() {
         mWrapped.pause();
+    }
+
+    public void resume() {
+        mWrapped.resume();
     }
 
     public void reverse() {
@@ -252,6 +295,57 @@ public class CSSAnimatorSet {
         if (view != null && isPercent()) {
             view.removeOnLayoutChangeListener(mLayoutChangeListener);
             view.addOnLayoutChangeListener(mLayoutChangeListener);
+        }
+    }
+
+    private void installActivityListener(Component component) {
+        if (!mActivityListenerInstalled && component != null && component.getCallback() != null) {
+            component.getCallback().addActivityStateListener(mActivityStateListener);
+            mActivityListenerInstalled = true;
+        }
+        if (!mForceActivityListenerInstalled && null != mComponent) {
+            addForceActivityListener(component, mActivityStateListener);
+            mForceActivityListenerInstalled = true;
+        }
+    }
+
+    private void uninstallActivityListener(Component component) {
+        if (mActivityListenerInstalled && component != null && component.getCallback() != null) {
+            component.getCallback().removeActivityStateListener(mActivityStateListener);
+            mActivityListenerInstalled = false;
+        }
+        if (mForceActivityListenerInstalled && null != mComponent) {
+            removeForceActivityListener(component, mActivityStateListener);
+            mForceActivityListenerInstalled = false;
+        }
+    }
+
+    private void addForceActivityListener(Component component, ActivityStateListener activityStateListener) {
+        final HybridView hybridView = component != null ? component.getHybridView() : null;
+        if (hybridView == null) {
+            Log.w(TAG, "addForceActivityListener error: hybrid view is null.");
+            return;
+        }
+        final HybridManager hybridManager = hybridView.getHybridManager();
+        if (null != hybridManager) {
+            hybridManager.addForceLifecycleListener(activityStateListener);
+        } else {
+            Log.w(TAG, "addForceLifecycleListener hybridManager is null.");
+        }
+    }
+
+
+    private void removeForceActivityListener(Component component, ActivityStateListener activityStateListener) {
+        final HybridView hybridView = component != null ? component.getHybridView() : null;
+        if (hybridView == null) {
+            Log.w(TAG, "removeForceActivityListener error: hybrid view is null.");
+            return;
+        }
+        final HybridManager hybridManager = hybridView.getHybridManager();
+        if (null != hybridManager) {
+            hybridManager.removeForceLifecycleListener(activityStateListener);
+        } else {
+            Log.w(TAG, "removeForceActivityListener hybridManager is null.");
         }
     }
 
@@ -336,6 +430,7 @@ public class CSSAnimatorSet {
                 hostView.removeOnAttachStateChangeListener(mOnAttachStateChangeListener);
                 hostView.removeOnLayoutChangeListener(mLayoutChangeListener);
             }
+            uninstallActivityListener(component);
         }
         if (mWrapped != null) {
             mWrapped.end();
@@ -673,6 +768,20 @@ public class CSSAnimatorSet {
                                         }
                                     }
                                 });
+
+                        continue;
+                    case PROPERTY_TRANSLATION_Z:
+                        valueAnimator.addListener(new AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(Animator animation) {
+                                super.onAnimationEnd(animation);
+                                if (!cssAnimatorSet.isFillForwards()) {
+                                    Transform.applyTranslationZ(
+                                            cssAnimatorSet.mTransform,
+                                            cssAnimatorSet.mComponent.getHostView());
+                                }
+                            }
+                        });
 
                         continue;
                     default:

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,6 +7,8 @@
 import { APP_KEYS } from 'src/shared/events'
 
 import { $typeof, uniqueCallbackId, $camelize } from 'src/shared/util'
+import { updatePageActions } from '../../../dsls/xvm/page/misc'
+import { xInvokeWithErrorHandling } from 'src/shared/error'
 
 import config from '../config'
 
@@ -32,7 +34,7 @@ function recreatePage(page) {
  * @param  {object} page
  */
 function destroyPage(page) {
-  console.log(`### App Framework ### 销毁页面(${page.id})----`)
+  console.log(`### App Framework ### 销毁页面 ${page.id} ----`)
 
   page.intent = null
   page.name = null
@@ -110,19 +112,24 @@ function callback(inst, callbackId, args = [], preserved) {
   }
 
   if (!inst.$valid) {
-    console.error(`invoke: 回调函数所属对象(${inst.id})已经无效, 终止回调执行`)
+    console.error(
+      `### App Framework ### invoke: 回调函数所属对象(${inst.id})已经无效, 终止回调执行`
+    )
     return
   }
 
   const callback = inst._callbacks[callbackId]
   if (typeof callback === 'function') {
-    // 必须是函数
+    const { vm, info } = callback.cbErrorData || {}
+    const errInfo = `${info || 'callback error:'} "${callback}"`
+    const _app = inst.app || {}
+
     // 执行回调
-    const ret = callback(...args)
+    const ret = xInvokeWithErrorHandling(callback, undefined, [...args], vm, errInfo, _app, inst)
 
     // 如果是定时器函数，则保留；否则清除（只使用一次）
     if (typeof preserved === 'undefined' || preserved === false) {
-      inst._callbacks[callbackId] = undefined
+      delete inst._callbacks[callbackId]
     }
 
     // 如果是页面对象
@@ -139,9 +146,10 @@ function callback(inst, callbackId, args = [], preserved) {
  * 参数转换，全部转为基础类型
  * @param v
  * @param app
+ * @param cbErrorData 捕获回调错误时所需数据
  * @returns {*}
  */
-function normalize(v, page) {
+function normalize(v, page, cbErrorData = {}) {
   const type = $typeof(v)
 
   switch (type) {
@@ -164,14 +172,16 @@ function normalize(v, page) {
       }
       const newArgs = {}
       for (const k in v) {
-        newArgs[k] = normalize(v[k], page)
+        newArgs[k] = normalize(v[k], page, cbErrorData)
       }
       return newArgs
     case 'function':
+    case 'asyncfunction':
       const cbId = uniqueCallbackId()
       if (!page._callbacks) {
         console.trace(`### App Framework ### normalize() 页面已经销毁，不再注册回调`)
       } else {
+        v.cbErrorData = cbErrorData
         page._callbacks[cbId] = v
       }
       return cbId.toString()
@@ -332,6 +342,115 @@ function compileFragmentData(rawData, document) {
   }
 }
 
+/**
+ * 处理页面 nextTickCallbacks
+ * @param page 页面
+ */
+function processNextTickCallbacks(page) {
+  if (!page || !page.nextTickCallbacks) return
+
+  // 获取当前页面根Vm的回调数组
+  const cbArr = page.nextTickCallbacks.slice(0)
+  // 清空回调事件的数组
+  page.nextTickCallbacks.length = 0
+  // 执行回调函数
+  for (const cb of cbArr) {
+    const vm = cb._vm
+
+    xInvokeWithErrorHandling(cb, vm, null, vm, `callback for nextTick "${cb}"`)
+
+    console.trace(`### App Framework ### XExecutor 正在执行nextTick回调函数`)
+    updatePageActions(page)
+  }
+}
+
+/**
+ * 处理节点自定义指令回调
+ * @param page 页面实例
+ * @param hookType 触发结构钩子类型
+ * @param args 客户端回调的参数
+ */
+function processCustomDirectiveCallback(page, hookType, args) {
+  const { ref, valueType, key, newValue, oldValue } = args
+
+  let callback
+  switch (hookType) {
+    case 'nodeMounted':
+      callback = 'mounted'
+      break
+    case 'nodeUpdate':
+      callback = 'update'
+      break
+    case 'nodeDestroy':
+      callback = 'destroy'
+      break
+  }
+  // 只处理nodeMounted、nodeUpdate、nodeDestroy钩子
+  if (!callback) return
+
+  const directivesContext = page.vm._directivesContext
+  // 从页面自定义指令上下文列表中得到对应节点的自定义指令上下文
+  const nodeDirContext = directivesContext[ref]
+  // 节点不存在指令上下文则跳过
+  if (!nodeDirContext) return
+
+  // 节点的自定义指令列表
+  const nodeDirs = Object.keys(nodeDirContext)
+
+  // 遍历触发节点自定义指令回调
+  for (let i = 0; i < nodeDirs.length; i++) {
+    // 指令名称
+    const dirName = nodeDirs[i]
+    // 节点指令所在的vm
+    const nodeDirVm = nodeDirContext[dirName]
+    // 取出节点在vm上对应的指令信息
+    const nodeDir = nodeDirVm._directives[dirName]
+    const curCb = nodeDir[callback]
+    // 不存在对应指令 或 不存在对应指令回调则跳过
+    if (!nodeDir || !curCb) continue
+
+    let binding
+    const element = config.runtime.helper.getDocumentNodeByRef(page.doc, ref)
+    if (element) {
+      const nodeDir = element._directives.find(dir => dir.name === dirName)
+      // 指令名称
+      binding = { name: nodeDir.name }
+
+      // 为指令绑定的data添加getter
+      Object.defineProperty(binding, 'data', {
+        enumerable: true,
+        configurable: false,
+        get() {
+          // 如果绑定的data为动态变量时，每次从watcher中取最新值，否则直接返回绑定值
+          return nodeDir.useDynamic && nodeDir.value.get ? nodeDir.value.get() : nodeDir.value
+        }
+      })
+      // 节点更新时增加更新相关参数
+      if (hookType === 'nodeUpdate') {
+        binding.key = key
+        binding.type = valueType
+        binding.newValue = newValue
+        binding.oldValue = oldValue
+      }
+    }
+
+    if (typeof curCb === 'function') {
+      // 触发节点自定义指令回调
+      xInvokeWithErrorHandling(
+        curCb,
+        nodeDirVm,
+        [element, binding],
+        nodeDirVm,
+        `dir:${dirName} "${callback}" hook`
+      )
+      // 自定义指令回调执行结束后，发送更新结束标识
+      page.doc.listener.updateFinish()
+    } else {
+      console.warn(`"${callback}" hook must be a function`)
+    }
+  }
+}
+
 export {
   recreatePage,
   getRootElement,
@@ -342,5 +461,7 @@ export {
   getElementStyles,
   setElementStyles,
   setElementAttrs,
-  compileFragmentData
+  compileFragmentData,
+  processNextTickCallbacks,
+  processCustomDirectiveCallback
 }

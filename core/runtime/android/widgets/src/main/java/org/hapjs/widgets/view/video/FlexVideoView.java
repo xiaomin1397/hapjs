@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,7 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Message;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
@@ -40,6 +41,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.facebook.yoga.YogaNode;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -97,6 +99,8 @@ public class FlexVideoView extends FrameLayout
     private Uri mPosterUri;
     private Boolean mMuted;
     private String mPlayCount;
+    private String mMark;
+    private float mSpeed = Video.SPEED_DEFAULT;
     private OnErrorListener mOnErrorListener;
     private OnIdleListener mOnIdleListener;
     private OnStartListener mOnStartListener;
@@ -148,6 +152,8 @@ public class FlexVideoView extends FrameLayout
     public static Uri mCacheFullScreenUri = null;
     public static boolean mIsFullScreen = false;
     public boolean mIsEverCacheVideo = false;
+    // 是否按下 video 控制栏左下角暂停按钮
+    private boolean mIsPauseButtonPress;
 
     public FlexVideoView(final Context context) {
         this(context, true);
@@ -170,6 +176,20 @@ public class FlexVideoView extends FrameLayout
         }
         if (mRoundRectF == null) {
             mRoundRectF = new RectF();
+        }
+    }
+
+    public String getMark() {
+        return mMark;
+    }
+
+    public void setMark(String mark) {
+        this.mMark = mark;
+        if (null != mPlayer) {
+            String curMark = mPlayer.getMark();
+            if (!TextUtils.isEmpty(mMark) && !mMark.equals(curMark)) {
+                releasePlayer();
+            }
         }
     }
 
@@ -216,6 +236,14 @@ public class FlexVideoView extends FrameLayout
 
     private boolean isRoundedBorders() {
         return mBorderRadiusFlags > 0f;
+    }
+
+    public void setPauseButtonPress(boolean mIsPauseButtonPress) {
+        this.mIsPauseButtonPress = mIsPauseButtonPress;
+    }
+
+    public boolean isPauseButtonPress() {
+        return mIsPauseButtonPress;
     }
 
     public void start() {
@@ -523,13 +551,13 @@ public class FlexVideoView extends FrameLayout
         }
     }
 
-    protected boolean onError(int what, int extra) {
+    protected boolean onError(int what, int extra, HashMap<String, Object> datas) {
         if (mOnTimeUpdateListener != null) {
             mTimeUpdateHandler.removeMessages(MSG_TIME_UPDATE);
         }
 
         if (mOnErrorListener != null) {
-            mOnErrorListener.onError(what, extra);
+            mOnErrorListener.onError(what, extra, datas);
         }
 
         switchKeepScreenOnFlagsByState(Player.STATE_ERROR);
@@ -546,8 +574,8 @@ public class FlexVideoView extends FrameLayout
     }
 
     @Override
-    public boolean onError(IMediaPlayer player, int what, int extra) {
-        return onError(what, extra);
+    public boolean onError(IMediaPlayer player, int what, int extra, HashMap<String, Object> datas) {
+        return onError(what, extra, datas);
     }
 
     @Override
@@ -1165,20 +1193,13 @@ public class FlexVideoView extends FrameLayout
 
     public void setAutoPlay(boolean autoPlay) {
         mAutoPlay = autoPlay;
-        if (null != mComponent) {
-            boolean isPageObtainPlayer = false;
-            Boolean isPageObtainPlayerObj = VideoCacheManager.getInstance().getPageObtainPlayer(mComponent.getPageId());
-            if (null != isPageObtainPlayerObj) {
-                isPageObtainPlayer = isPageObtainPlayerObj.booleanValue();
+        if (mAutoPlay && null != mUri && null == mPlayer) {
+            initPlayer();
+            if (mIsFullScreen && null != mCacheFullScreenUri && !mUri.equals(mCacheFullScreenUri)) {
+                Log.w(TAG, "setAutoPlay mUri is not fullscreen Uri ,setAutoPlay invalid");
+                return;
             }
-            if (mAutoPlay && null != mUri && null == mPlayer && !isPageObtainPlayer) {
-                initPlayer();
-                if (mIsFullScreen && null != mCacheFullScreenUri && !mUri.equals(mCacheFullScreenUri)) {
-                    Log.w(TAG, "setAutoPlay mUri is not fullscreen Uri ,setAutoPlay invalid");
-                    return;
-                }
-                makeEffectVideoURI(false);
-            }
+            makeEffectVideoURI(false);
         }
     }
 
@@ -1308,14 +1329,23 @@ public class FlexVideoView extends FrameLayout
             if (mMuted != null) {
                 mPlayer.setMuted(mMuted);
             }
+            mPlayer.setSpeed(mSpeed);
             mPlayer.setDataSource(mUri);
             mPlayer.setEventListener(this);
             mControlsManager.attachPlayer(mPlayer);
         }
+        mPlayer.setMark(mMark);
+    }
+
+    public void setSpeed(float speed) {
+        mSpeed = speed;
+        if (mPlayer != null) {
+            mPlayer.setSpeed(speed);
+        }
     }
 
     public interface OnErrorListener {
-        boolean onError(int what, int extra);
+        boolean onError(int what, int extra, HashMap<String, Object> datas);
     }
 
     public interface OnIdleListener {

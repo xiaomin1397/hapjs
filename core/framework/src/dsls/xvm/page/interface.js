@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-2022, the hapjs-platform Project Contributors
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,7 +40,9 @@ function initPage(page, code, query, globals) {
     )
     profiler.time(`PERF:bootstrapPage`)
     result = $bootstrap(page, name, configs, query)
-    page.doc.listener.createFinish()
+    const hasCallbacks = page.nextTickCallbacks && page.nextTickCallbacks.length > 0
+    page.doc.listener.createFinish(null, hasCallbacks)
+
     console.trace(`### App Framework ### 完成实例初始化(${page.id})----`)
     profiler.timeEnd(`PERF:bootstrapPage`)
     profiler.record(
@@ -58,6 +60,10 @@ function initPage(page, code, query, globals) {
   }
 
   const instEvaluate = context.quickapp.dock.makeEvaluateBuildScript(globals)
+
+  const jsonRequire = (jsonModuleName, options) => {
+    return context.quickapp.platform.requireJson(jsonModuleName, options)
+  }
 
   // 处理代码
   let functionBody
@@ -82,7 +88,8 @@ function initPage(page, code, query, globals) {
         $app_bootstrap$: instBootstrap,
         $app_require$: instRequireModule,
         $app_define_wrap$: instDefineWrap,
-        $app_evaluate$: instEvaluate
+        $app_evaluate$: instEvaluate,
+        $json_require$: jsonRequire
       },
       globals
     )
@@ -97,6 +104,7 @@ function initPage(page, code, query, globals) {
     global.$app_require$ = instRequireModule
     global.$app_define_wrap$ = instDefineWrap
     global.$app_evaluate$ = instEvaluate
+    global.$json_require$ = jsonRequire
 
     global.setTimeout = globals.setTimeout
     global.setInterval = globals.setInterval

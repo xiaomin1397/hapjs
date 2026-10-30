@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,6 +32,9 @@ import org.hapjs.component.Container;
 import org.hapjs.component.OnDomTreeChangeListener;
 import org.hapjs.component.bridge.RenderEventCallback;
 import org.hapjs.component.constants.Attributes;
+import org.hapjs.render.DecorLayout;
+import org.hapjs.render.vdom.DocComponent;
+import org.hapjs.runtime.GrayModeManager;
 import org.hapjs.runtime.HapEngine;
 import org.hapjs.runtime.ProviderManager;
 import org.hapjs.widgets.map.model.HybridLatLng;
@@ -63,7 +66,9 @@ import org.json.JSONObject;
                 Map.METHOD_SET_MAX_AND_MIN_SCALE_LEVEL,
                 Component.METHOD_GET_BOUNDING_CLIENT_RECT,
                 Component.METHOD_TO_TEMP_FILE_PATH,
-                Component.METHOD_FOCUS
+                Component.METHOD_FOCUS,
+                Component.METHOD_TALKBACK_FOCUS,
+                Component.METHOD_TALKBACK_ANNOUNCE
         })
 public class Map extends Container<MapFrameLayout> {
 
@@ -285,6 +290,11 @@ public class Map extends Container<MapFrameLayout> {
         }
         MapFrameLayout layout = (MapFrameLayout) mMapProxy.getMapView();
         layout.setComponent(this);
+        if (GrayModeManager.getInstance().shouldApplyGrayMode()) {
+            DocComponent docComponent = getRootComponent();
+            DecorLayout decorLayout = docComponent.getDecorLayout();
+            decorLayout.applyGrayMode(false);
+        }
         return layout;
     }
 

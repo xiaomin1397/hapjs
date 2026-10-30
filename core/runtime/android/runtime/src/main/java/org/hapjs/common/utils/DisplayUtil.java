@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@ import android.app.UiModeManager;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.WindowInsets;
 
 import org.hapjs.model.AppInfo;
@@ -17,8 +18,11 @@ import org.hapjs.runtime.ProviderManager;
 import org.hapjs.runtime.Runtime;
 import org.hapjs.system.SysOpProvider;
 
+import java.util.HashMap;
+
 public class DisplayUtil {
     private static final String TAG = "DisplayUtil";
+    public static final String USE_FOLDSTATUS_WH = "use_foldstatus_wh";
     private static SysOpProvider sysOpProvider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
 
     private static WindowInsets sWindowInsets;
@@ -59,6 +63,40 @@ public class DisplayUtil {
         return realPx / getScreenWidth(context) * designWidth / densityScaledRatio;
     }
 
+    public static float getFoldRealPxByWidth(float designPx, int designWidth,boolean isFold) {
+        Context context = Runtime.getInstance().getContext();
+        SysOpProvider provider = ProviderManager.getDefault().getProvider(SysOpProvider.NAME);
+        float densityScaledRatio = provider != null ? provider.getDensityScaledRatio(context) : 1f;
+        HashMap<String,Object> params = new HashMap<>();
+        params.put(USE_FOLDSTATUS_WH,isFold);
+        return designPx * getScreenWidth(context,params) / designWidth * densityScaledRatio;
+    }
+
+    public static int getScreenWidth(Context context, HashMap<String,Object> datas) {
+        if (context == null || sHapEngine == null) {
+            return 0;
+        }
+
+        AppInfo appInfo = sHapEngine.getApplicationContext().getAppInfo();
+        if (appInfo == null) {
+            return 0;
+        }
+        return sysOpProvider.getScreenWidthPixels(context, appInfo.getMinPlatformVersion(),datas);
+    }
+
+    public static int getScreenHeight(Context context, HashMap<String,Object> datas) {
+        if (context == null || sHapEngine == null) {
+            return 0;
+        }
+
+        AppInfo appInfo = sHapEngine.getApplicationContext().getAppInfo();
+        if (appInfo == null) {
+            return 0;
+        }
+        return sysOpProvider.getScreenHeightPixels(context, appInfo.getMinPlatformVersion(),datas);
+    }
+
+
     public static boolean isPortraitMode(Context context) {
         if (context != null
                 && context.getResources() != null
@@ -88,8 +126,7 @@ public class DisplayUtil {
         if (appInfo == null) {
             return 0;
         }
-
-        return sysOpProvider.getScreenWidthPixels(context, appInfo.getMinPlatformVersion());
+        return sysOpProvider.getScreenWidthPixels(context, appInfo.getMinPlatformVersion(),null);
     }
 
     public static int getScreenHeight(Context context) {
@@ -101,8 +138,7 @@ public class DisplayUtil {
         if (appInfo == null) {
             return 0;
         }
-
-        return sysOpProvider.getScreenHeightPixels(context, appInfo.getMinPlatformVersion());
+        return sysOpProvider.getScreenHeightPixels(context, appInfo.getMinPlatformVersion(),null);
     }
 
     public static int getStatusBarHeight(Context context) {
@@ -120,6 +156,22 @@ public class DisplayUtil {
         DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
         float density = displayMetrics.density;
         return (int) (dip * density + 0.5f);
+    }
+
+    public static int dip2PixelFloat(Context context, float dip) {
+        DisplayMetrics displayMetrics = context.getResources().getDisplayMetrics();
+        float density = displayMetrics.density;
+        return (int) (dip * density + 0.5f);
+    }
+
+    /**
+     * dp转px
+     *
+     * @param context
+     * @return
+     */
+    public static int dp2px(Context context, float dpVal) {
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dpVal, context.getResources().getDisplayMetrics());
     }
 
     public static int getDestinyDpi() {

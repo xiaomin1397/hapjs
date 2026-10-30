@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -37,10 +37,12 @@ import org.hapjs.component.constants.Attributes;
 import org.hapjs.component.utils.YogaUtil;
 import org.hapjs.component.view.ScrollView;
 import org.hapjs.runtime.HapEngine;
+import org.hapjs.widgets.R;
 import org.hapjs.widgets.RecyclerDataItemFactory;
 import org.hapjs.widgets.view.list.FlexGridLayoutManager;
 import org.hapjs.widgets.view.list.FlexLayoutManager;
 import org.hapjs.widgets.view.list.FlexStaggeredGridLayoutManager;
+import org.hapjs.widgets.view.list.RecyclerViewAdapter;
 
 @WidgetAnnotation(
         name = List.WIDGET_NAME,
@@ -50,9 +52,11 @@ import org.hapjs.widgets.view.list.FlexStaggeredGridLayoutManager;
                 Component.METHOD_ANIMATE,
                 Component.METHOD_GET_BOUNDING_CLIENT_RECT,
                 Component.METHOD_TO_TEMP_FILE_PATH,
-                Component.METHOD_FOCUS
+                Component.METHOD_FOCUS,
+                Component.METHOD_TALKBACK_FOCUS,
+                Component.METHOD_TALKBACK_ANNOUNCE
         })
-public class List extends AbstractScrollable<FlexRecyclerView> implements Recycler, SwipeObserver {
+public class List extends AbstractScrollable<RecyclerView> implements Recycler, SwipeObserver {
     protected static final String WIDGET_NAME = "list";
     protected static final String METHOD_SCROLL_TO = "scrollTo";
     protected static final String METHOD_PARAM_INDEX = "index";
@@ -68,13 +72,15 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
     private static final String LIST_STAGGER_TYPE = "stagger";
     private String mCurrentLayoutType;
     private Adapter mAdapter;
-    private FlexRecyclerView mRecyclerView;
+    private RecyclerView mRecyclerView;
     private ScrollListener mScrollListener;
     private ScrollBottomListener mScrollBottomListener;
     private ScrollTopListener mScrollTopListener;
     private ScrollEndListener mScrollEndListener;
     private ScrollTouchUpListener mScrollTouchUpListener;
     private FlexLayoutManager mFlexLayoutManager;
+    protected RecyclerViewAdapter mRecyclerViewImpl;
+
     private RecyclerItem mRecyclerItem;
     private int mPreviousScrollPosition = -1;
     private int mPreviousScrollOffset = 0;
@@ -82,6 +88,7 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
     private boolean mIsScrollPage = false;
     private int mOrientation = OrientationHelper.VERTICAL;
     private boolean mIsReverse = false;
+    private boolean mIsEnableTalkBack;
 
     public List(
             HapEngine hapEngine,
@@ -91,17 +98,20 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
             RenderEventCallback callback,
             Map<String, Object> savedState) {
         super(hapEngine, context, parent, elId, callback, savedState);
+        mIsEnableTalkBack = isEnableTalkBack();
     }
 
     @Override
-    protected FlexRecyclerView createViewImpl() {
-        mRecyclerView = new FlexRecyclerView(mContext);
-        mRecyclerView.setComponent(this);
+    protected RecyclerView createViewImpl() {
+        mRecyclerViewImpl = createRecyclerViewInner();
+        mRecyclerViewImpl.setComponent(this);
 
+        mRecyclerView = mRecyclerViewImpl.getActualRecyclerView();
         ViewGroup.LayoutParams params = generateDefaultLayoutParams();
         mRecyclerView.setLayoutParams(params);
         initFlexLayoutManager();
         mRecyclerView.setItemAnimator(null);
+
         mAdapter = new Adapter();
         mRecyclerView.setAdapter(mAdapter);
         if (getRecyclerItem() != null) {
@@ -139,12 +149,12 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
                                     == mFlexLayoutManager
                                     .findFlexLastCompletelyVisibleItemPosition()) {
                                 if (mFlexLayoutManager.canFlexScrollHorizontally()) {
-                                    if (Math.abs(mScrolledX) > 1) {
+                                    if (Math.abs(mScrolledX) >= 1) {
                                         mScrollBottomListener.onScrollBottom();
                                         mScrolledX = 0;
                                     }
                                 } else if (mFlexLayoutManager.canFlexScrollVertically()) {
-                                    if (Math.abs(mScrolledY) > 1) {
+                                    if (Math.abs(mScrolledY) >= 1) {
                                         mScrollBottomListener.onScrollBottom();
                                         mScrolledY = 0;
                                     }
@@ -234,6 +244,15 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
             }
         }
         setFlexLayoutManager(LIST_GRID_TYPE);
+    }
+
+    protected FlexLayoutManager createLayoutManagerInner() {
+        return LIST_STAGGER_TYPE.equals(mCurrentLayoutType) ? new FlexStaggeredGridLayoutManager(OrientationHelper.VERTICAL) :
+                new FlexGridLayoutManager(mContext, mRecyclerViewImpl);
+    }
+
+    protected RecyclerViewAdapter createRecyclerViewInner() {
+        return new FlexRecyclerView(mContext);
     }
 
     @Override
@@ -406,18 +425,17 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
         }
         if (LIST_STAGGER_TYPE.equalsIgnoreCase(typeObj.trim())) {
             mCurrentLayoutType = LIST_STAGGER_TYPE;
-            mFlexLayoutManager = new FlexStaggeredGridLayoutManager(OrientationHelper.VERTICAL);
+            mFlexLayoutManager = createLayoutManagerInner();
         } else if (LIST_GRID_TYPE.equalsIgnoreCase(typeObj.trim())) {
             mCurrentLayoutType = LIST_GRID_TYPE;
-            FlexGridLayoutManager gridLayoutManager = new FlexGridLayoutManager(mContext);
-            gridLayoutManager.setSpanSizeLookup(new SpanSizeLookup());
-            mFlexLayoutManager = gridLayoutManager;
+            mFlexLayoutManager = createLayoutManagerInner();
+            mFlexLayoutManager.setSpanSizeLookup(new SpanSizeLookup());
         } else {
             mCallback.onJsException(
                     new IllegalAccessException("the layout-type of list must be grid or stagger"));
             return;
         }
-        mFlexLayoutManager.setFlexRecyclerView(mRecyclerView);
+        mFlexLayoutManager.setFlexRecyclerView(mRecyclerViewImpl);
         mFlexLayoutManager.setFlexSpanCount(mColumnCount);
         setScrollPage(mIsScrollPage);
         mRecyclerView.setLayoutManager(mFlexLayoutManager.getRealLayoutManager());
@@ -563,7 +581,7 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
             return;
         }
 
-        mHost.setScrollPage(scrollPage);
+        mRecyclerViewImpl.setScrollPage(scrollPage);
         mFlexLayoutManager.setScrollPage(scrollPage);
     }
 
@@ -693,7 +711,7 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
             super.onApplyDataToComponent(recycle);
             ((List) recycle).setRecyclerData(this);
             RecyclerView.LayoutManager layoutManager =
-                    ((FlexRecyclerView) recycle.getHostView()).getLayoutManager();
+                    ((RecyclerView) recycle.getHostView()).getLayoutManager();
             if (layoutManager == null) {
                 Log.e(TAG, "onApplyDataToComponent: layoutManager is null");
                 return;
@@ -709,7 +727,7 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
         public void unbindComponent() {
             if (getBoundComponent() != null) {
                 RecyclerView.LayoutManager layoutManager =
-                        ((FlexRecyclerView) getBoundComponent().getHostView()).getLayoutManager();
+                        ((RecyclerView) getBoundComponent().getHostView()).getLayoutManager();
                 if (layoutManager != null) {
                     mInstanceState = layoutManager.onSaveInstanceState();
                 }
@@ -764,6 +782,15 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
     private class Holder extends RecyclerView.ViewHolder {
         private Component mRecycleComponent;
         private RecyclerDataItem mItem;
+
+        public void setContentDescription(String description) {
+            if (!TextUtils.isEmpty(description) && null != mRecycleComponent) {
+                View hostView = mRecycleComponent.getHostView();
+                if (null != hostView) {
+                    hostView.setContentDescription(description);
+                }
+            }
+        }
 
         Holder(Component instance) {
             super(instance.getHostView());
@@ -845,6 +872,16 @@ public class List extends AbstractScrollable<FlexRecyclerView> implements Recycl
         public void onBindViewHolder(Holder holder, int position) {
             ListItem.RecyclerItem item = getItem(position);
             mRecyclerItem.attachToTemplate(item);
+            if (mIsEnableTalkBack) {
+                String description = item.getViewDescription();
+                if (TextUtils.isEmpty(description)) {
+                    if (null != mContext) {
+                        holder.setContentDescription(mContext.getResources().getString(R.string.talkback_notitle_defaultstr));
+                    }
+                } else {
+                    holder.setContentDescription(description);
+                }
+            }
             holder.bind(item);
             Component component = holder.getRecycleComponent();
             lazySetAppearanceWatch(component);

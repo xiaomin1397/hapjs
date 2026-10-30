@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, the hapjs-platform Project Contributors
+ * Copyright (c) 2021-present, the hapjs-platform Project Contributors
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,9 @@ import android.webkit.WebView;
 import androidx.appcompat.app.AppCompatActivity;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.hapjs.analyzer.Analyzer;
+import org.hapjs.analyzer.AnalyzerContext;
+import org.hapjs.analyzer.panels.PanelDisplay;
 import org.hapjs.bridge.Constants;
 import org.hapjs.bridge.HybridManager;
 import org.hapjs.bridge.HybridRequest;
@@ -29,6 +32,7 @@ import org.hapjs.logging.Source;
 import org.hapjs.model.videodata.VideoCacheManager;
 import org.hapjs.render.RootView;
 import org.hapjs.render.jsruntime.JsThread;
+import org.hapjs.system.utils.TalkBackUtils;
 
 public class RuntimeActivity extends AppCompatActivity {
     public static final String PROP_APP = "runtime.app";
@@ -415,6 +419,7 @@ public class RuntimeActivity extends AppCompatActivity {
         if (mHybridView != null) {
             mHybridView.getHybridManager().onResume();
         }
+        TalkBackUtils.isEnableTalkBack(RuntimeActivity.this,true);
     }
 
     @Override
@@ -475,7 +480,9 @@ public class RuntimeActivity extends AppCompatActivity {
             if (mHybridView != null
                     && mHybridView.canGoBack()
                     && !mHybridView.getHybridManager().isDetached()) {
-                mHybridView.goBack();
+                if (!interceptedByAnalyzerPanel()) {
+                    mHybridView.goBack();
+                }
                 return true;
             }
         } else if (keyCode == KeyEvent.KEYCODE_MENU) {
@@ -503,6 +510,17 @@ public class RuntimeActivity extends AppCompatActivity {
             }
         }
         return super.onKeyUp(keyCode, event);
+    }
+
+    private boolean interceptedByAnalyzerPanel() {
+        AnalyzerContext analyzerContext = Analyzer.get().getAnalyzerContext();
+        if (analyzerContext != null) {
+            PanelDisplay panelDisplay = analyzerContext.getPanelDisplay();
+            if (panelDisplay != null) {
+                return panelDisplay.onBackPressed();
+            }
+        }
+        return false;
     }
 
     @Override

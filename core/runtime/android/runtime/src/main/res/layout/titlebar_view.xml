@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 
 <!--
-    Copyright (c) 2021, the hapjs-platform Project Contributors
+    Copyright (c) 2021-present, the hapjs-platform Project Contributors
     SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -46,7 +46,8 @@
                         android:layout_width="16dp"
                         android:layout_height="16dp"
                         android:layout_gravity="center"
-                        android:src="@drawable/menu_dot" />
+                        android:src="@drawable/menu_dot"
+                        android:contentDescription="@string/talkback_titlebar_left_menu_iv"/>
                 </LinearLayout>
 
                 <LinearLayout
@@ -100,7 +101,8 @@
                     android:layout_width="@dimen/menubar_dialog_menu_close_image_width"
                     android:layout_height="@dimen/menubar_dialog_menu_close_image_height"
                     android:layout_gravity="center"
-                    android:src="@drawable/menu_close" />
+                    android:src="@drawable/menu_close"
+                    android:contentDescription="@string/talkback_close"/>
             </LinearLayout>
         </LinearLayout>
 
@@ -122,14 +124,18 @@
         android:visibility="gone">
 
         <TextView
+            android:id="@+id/menubar_tips_tv"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_vertical"
+            android:ellipsize="end"
             android:gravity="right"
+            android:maxWidth="208dp"
             android:paddingLeft="13dp"
             android:paddingRight="6dp"
+            android:singleLine="true"
             android:text="@string/menubar_tips"
             android:textColor="#FFFFFFFF"
-            android:textSize="14sp"></TextView>
+            android:textSize="14dp"></TextView>
     </LinearLayout>
 </FrameLayout>
